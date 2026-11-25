@@ -71,6 +71,7 @@ class DirectorStore:
         return next((entry for entry in self.brands(project_id) if entry["id"] == revision), None)
 
     def inputs(self, project_id, playbook_id):
+        from .visual_store import GUIDANCE, latest as latest_visual
         from .motion_store import MotionStore, rules, suggested_events
         cfg = DirectorSettings.from_env()
         if cfg.mode not in ("openai", "mock"):
@@ -116,6 +117,12 @@ class DirectorStore:
             current = db.execute("""SELECT p.payload FROM director_current c JOIN director_plans p ON p.id=c.plan_id
                                    WHERE c.project_id=?""", (str(project_id),)).fetchone()
             current_plan = json.loads(current[0]) if current else None
+            has_visual = db.execute("SELECT 1 FROM sqlite_master WHERE name='visual_assets'").fetchone()
+            visual = latest_visual(db, project_id, current_plan["id"]) if has_visual and current_plan else None
+            local = [json.loads(row[0]) for row in db.execute("SELECT payload FROM visual_assets ORDER BY rowid DESC LIMIT 30")] if has_visual else []
+            public_render = (db.execute("""SELECT i.manifest FROM render_inputs i JOIN renders r ON r.id=i.job_id
+                                        WHERE r.project_id=? ORDER BY r.rowid DESC LIMIT 1""", (str(project_id),)).fetchone()
+                             if has_visual else None)
             face = MotionStore.face(db, project_id) if has_motion else None
             motion = MotionStore.latest(db, project_id, current_plan["id"]) if has_motion and current_plan else None
         saved = json.loads(motion["payload"]) if motion else {}
@@ -138,6 +145,14 @@ class DirectorStore:
             "eligible_cuts": eligible, "minimum_cut_ms": silence.detection.minimum_removable_ms,
             "brand": brand["settings"], "playbook": playbook.model_dump(),
             "brand_revision": brand["id"], "playbook_revision": f"{playbook.id}@{playbook.revision}",
+            "visuals": {"guidance": GUIDANCE[playbook_id],
+                        "speed": json.loads(public_render[0])["settings"]["playback_speed"] if public_render else 1,
+                        "approved_motion": [{"source":e["source"],"end_zoom":e["end_zoom"]} for e in saved.get("events", [])
+                                            if e["status"]=="accepted"],
+                        "local_assets": [{"category":row["category"],"kind":row["kind"]} for row in local
+                                         if row["provenance"]["provider"]=="personal"],
+                        "prior_decisions": [{"source":event["source"],"purpose":event["purpose"],"status":event["status"]}
+                                            for event in json.loads(visual[0])["events"]] if visual else []},
             "finishing": {"evidence": "Sampled metadata only" if measured else "No visual or audio sample measurements",
                           "video": {key: measured.get("video", {}).get(key) for key in
                                     ("interpretation", "color_primaries", "color_transfer")},

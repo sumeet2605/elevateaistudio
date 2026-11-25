@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .brand import Brand
+from .visuals import BoundVisual
 from .finishing import Grade, Voice
 from .motion_models import CameraSettings, Focus, MotionEvent
 from .motion_store import rules
@@ -94,6 +95,9 @@ class RenderManifest(BaseModel):
     voice_revision: UUID | None = None
     grade_fingerprint: str | None = None
     voice_fingerprint: str | None = None
+    visual_revision: UUID | None = None
+    visual_fingerprint: str | None = None
+    visuals: list[BoundVisual] = Field(default_factory=list, max_length=18)
     voice_leveling: bool
     notices: list[str]
 
@@ -144,6 +148,17 @@ class RenderManifest(BaseModel):
                 raise ValueError("Face-tracking timestamps must be ordered and within the original.")
             if self.display_geometry and min(self.display_geometry) < 2:
                 raise ValueError("Invalid display dimensions.")
+        last = 0
+        for visual in self.visuals:
+            event, asset = visual.event, visual.asset
+            if event.status != "accepted" or event.asset_id != asset.id:
+                raise ValueError("Only accepted inserts with their pinned assets may render.")
+            mapped = self.visual_frames(event.source)
+            if not mapped or mapped[0] < last:
+                raise ValueError("Visual inserts overlap or cross a removed interval.")
+            last = mapped[1]
+            if asset.kind == "video" and (asset.duration is None or asset.duration + 1e-6 < (mapped[1]-mapped[0])/FPS):
+                raise ValueError("A video cutaway is shorter than the insert. Shorten the event.")
         return self
 
     def map_motion_span(self, source):
@@ -157,6 +172,14 @@ class RenderManifest(BaseModel):
                 return start - keep.start_frame + offset, end - keep.start_frame + offset
             offset += keep.duration
         return None
+
+    def visual_frames(self, source):
+        mapped = self.map_motion_span(source)
+        if mapped is None:
+            return None
+        speed = self.settings.playback_speed
+        start, end = (round(frame / speed) for frame in mapped)
+        return (start, min(end, self.output_frames)) if end > start else None
 
     def edited_zooms(self):
         mapped = []
@@ -179,7 +202,8 @@ class RenderManifest(BaseModel):
         if self.motion_revision:
             identity = hashlib.sha256(f"{identity}:{self.motion_revision}:{self.motion_fingerprint}".encode()).hexdigest()
         for revision, fingerprint in ((self.grade_revision, self.grade_fingerprint),
-                                      (self.voice_revision, self.voice_fingerprint)):
+                                      (self.voice_revision, self.voice_fingerprint),
+                                      (self.visual_revision, self.visual_fingerprint)):
             if revision:
                 identity = hashlib.sha256(f"{identity}:{revision}:{fingerprint}".encode()).hexdigest()
         return identity

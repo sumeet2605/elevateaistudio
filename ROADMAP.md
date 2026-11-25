@@ -17,3 +17,5 @@ Day 7 adds versioned caption presets, correction history, and ASS word effects i
 Day 8 adds the Camera & Motion workspace, local face-analysis caching, reviewed camera moves and revision-bound export approval. The real-footage style default remains pending brand review.
 
 Day 9 adds local Colour & Sound samples, adjustable finishing presets, pinned finishing revisions and encoded loudness verification. The four pilot treatments await visual and listening review.
+
+Day 10 adds transcript-linked visual recommendations, a reusable asset library, controlled provider adapters, deterministic graphic cards and reviewed full-screen cutaways. The mock-asset comparison awaits human review.

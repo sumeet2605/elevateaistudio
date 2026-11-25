@@ -11,11 +11,12 @@ import BrandKit from "./brand-kit";
 import DirectorStudio from "./director-studio";
 
 import CaptionsStudio from "./captions-studio";
+import VisualStudio from "./visual-studio";
 import FinishStudio from "./finish-studio";
 import MotionStudio from "./motion-studio";
 import RenderStudio from "./render-studio";
 
-const tabs = ["source", "transcription", "silence", "brand", "director", "captions", "motion", "finish", "render"] as const;
+const tabs = ["source", "transcription", "silence", "brand", "director", "captions", "motion", "finish", "visual", "render"] as const;
 type Tab = typeof tabs[number];
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -199,6 +200,8 @@ export default function Studio() {
               tabIndex={tab === "motion" ? 0 : -1} onClick={() => selectTab("motion")}>Camera &amp; Motion</button>
             <button id="finish-tab" role="tab" aria-selected={tab === "finish"} aria-controls="finish-panel"
               tabIndex={tab === "finish" ? 0 : -1} onClick={() => selectTab("finish")}>Colour &amp; Sound</button>
+            <button id="visual-tab" role="tab" aria-selected={tab === "visual"} aria-controls="visual-panel"
+              tabIndex={tab === "visual" ? 0 : -1} onClick={() => selectTab("visual")}>B-roll &amp; Visuals</button>
             <button id="render-tab" role="tab" aria-selected={tab === "render"} aria-controls="render-panel"
               tabIndex={tab === "render" ? 0 : -1} onClick={() => selectTab("render")}>Render</button>
           </div>}
@@ -246,6 +249,8 @@ export default function Studio() {
             position={position} duration={media?.duration_seconds ?? 0} seek={seek}/>}
           {active && tab === "finish" && <FinishStudio key={active.id} projectId={active.id}
             duration={media?.duration_seconds ?? 0} position={position}/>}
+          {active && tab === "visual" && <VisualStudio key={active.id} projectId={active.id}
+            duration={media?.duration_seconds ?? 0} position={position} seek={seek}/>}
           {active && tab === "render" && <RenderStudio key={active.id} projectId={active.id} ready={videoReady} seek={seek}/>}
           </div>
         </main>

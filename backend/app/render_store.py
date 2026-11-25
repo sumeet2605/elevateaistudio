@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from .director import DirectorPlan
+from .asset_library import initialize_visuals
 from .finish_store import initialize as initialize_finish, pinned as pinned_finish
 from .director_store import DirectorStore, reviewed_plan
 from .render_manifest import RenderManifest, RenderSettings, Zoom, frame_spans
@@ -31,6 +32,7 @@ class Renders:
         MotionStore(self.jobs).initialize()
         with self.projects.connect() as db:
             initialize_finish(db)
+            initialize_visuals(db)
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS caption_revisions (
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
@@ -89,7 +91,8 @@ class Renders:
             return "The original source no longer matches this plan."
         return None
 
-    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True, include_motion=True):
+    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True, include_motion=True, include_visuals=True):
+        from .visual_store import latest as latest_visual, visual_manifest
         with self.projects.connect() as db:
             db.execute("BEGIN")
             selected = self.selected(db, project_id, plan_id)
@@ -100,6 +103,10 @@ class Renders:
             caption = self.latest_caption(db, project_id, plan_id) if include_captions else None
             motion = MotionStore.latest(db, project_id, plan["id"]) if include_motion else None
             finishing = pinned_finish(db, project_id, plan["id"])
+            row_visual = latest_visual(db, project_id, plan["id"]) if include_visuals else None
+            visual = visual_manifest(row_visual)
+            if row_visual and json.loads(row_visual["payload"])["speed"] != settings.playback_speed and visual["visuals"]:
+                raise HTTPException(409, "Save the B-roll revision at the selected playback speed.")
         if issue:
             raise HTTPException(409, issue)
         try:
@@ -132,7 +139,7 @@ class Renders:
             elif kind == "hook":
                 notices.append("The accepted hook is advisory. The source order is preserved.")
             elif kind == "b_roll":
-                notices.append("The accepted B-roll idea is advisory. No footage is inserted.")
+                notices.append("The director idea is advisory. Review the cutaway in B-roll & Visuals.")
             elif kind == "audio" and operation["idea"] == "keep natural" and reviewed["brand"]["audio"] == "natural":
                 continue
             else:
@@ -153,7 +160,7 @@ class Renders:
                 brand_revision=plan["brand_revision"], playbook_revision=plan["playbook_revision"],
                 brand=plan["brand"], settings=settings, source_duration_ms=plan["source_duration_ms"],
                 cuts=reviewed["approved_cuts"], retained=retained, frame_ranges=frame_spans(retained),
-                emphasis=highlights, **camera, **finishing, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
+                emphasis=highlights, **camera, **finishing, **visual, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
                 notices=notices,
             )
         except ValidationError as error:
@@ -182,7 +189,8 @@ class Renders:
             raise ValueError("The pinned caption revision changed or is missing.")
         return json.loads(row[0])
 
-    def stale(self, db, manifest, *, check_captions=True, check_motion=True):
+    def stale(self, db, manifest, *, check_captions=True, check_motion=True, check_visuals=True):
+        from .visual_store import latest as latest_visual, visual_manifest
         selected = self.selected(db, manifest.project_id, manifest.plan_id)
         if not selected or hashlib.sha256(selected[0].encode()).hexdigest() != manifest.plan_fingerprint:
             return "The selected editing-plan revision changed. Generate a new preview."
@@ -206,6 +214,10 @@ class Renders:
                 getattr(manifest, f"{kind}_fingerprint") != finishing.get(f"{kind}_fingerprint")
             ):
                 return "Colour or sound changed. Generate and approve a new preview."
+        if check_visuals:
+            current = visual_manifest(latest_visual(db, manifest.project_id, manifest.plan_id))
+            if current.get("visual_fingerprint") != manifest.visual_fingerprint:
+                return "B-roll changed. Generate and approve a new preview."
         issue = self.revision_issue(db, manifest.project_id, selected[1])
         if issue:
             return issue

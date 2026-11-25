@@ -5,6 +5,7 @@ from fractions import Fraction
 from pathlib import Path
 from time import perf_counter
 
+from .asset_library import asset_path
 from .captions import ass_asset, captions_for
 from .dynamic_captions import CaptionStyle, Cue, dynamic_ass, retime_cues, wrapping
 from .ffmpeg_render import HDR_TRANSFERS, ffmpeg_args, run_ffmpeg, streams
@@ -52,6 +53,12 @@ def render_video(settings, jobs, job, stage):
     stage("checking_source")
     if digest(source) != manifest.source_media_id:
         raise ValueError("The original no longer matches the approved plan.")
+    visual_paths = []
+    for visual in manifest.visuals:
+        path = asset_path(store.projects, visual.asset)
+        if digest(path) != visual.asset.checksum:
+            raise ValueError("A pinned visual asset checksum changed.")
+        visual_paths.append(path)
     transcript = Transcript.model_validate_json(store.transcript_path(
         manifest.project_id, manifest.transcript_revision).read_bytes())
     if (transcript.project_id != manifest.project_id or transcript.source_media_id != manifest.source_media_id
@@ -97,7 +104,7 @@ def render_video(settings, jobs, job, stage):
                                                  audio_pass=True), lambda: stage("measuring_audio", .02))
             voice_seconds = perf_counter() - started_voice
         args = ffmpeg_args(executable, source, manifest, video["index"], audio["index"],
-                           color_transfer=video.get("color_transfer"), color_info=video, measured=measured)
+                           color_transfer=video.get("color_transfer"), color_info=video, measured=measured, visual_paths=visual_paths)
         run_ffmpeg(args, work, manifest.encoded_ms, lambda progress: stage("encoding_preview", progress))
         stage("verifying_preview", 0.99)
         preview = work / "preview.mp4"
@@ -109,7 +116,7 @@ def render_video(settings, jobs, job, stage):
                 verified_video["height"], verified_video["pix_fmt"]) != ("h264", "aac", 1080, 1920, "yuv420p"):
             raise ValueError("FFprobe found unexpected output codecs, dimensions, or pixel format.")
         hdr = video.get("color_transfer") in HDR_TRANSFERS
-        if (hdr or manifest.grade_revision or manifest.voice_revision) and any(verified_video.get(field) != "bt709"
+        if (hdr or manifest.grade_revision or manifest.voice_revision or manifest.visual_revision) and any(verified_video.get(field) != "bt709"
                        for field in ("color_transfer", "color_space", "color_primaries")):
             raise ValueError("FFprobe could not confirm the finished video is tagged BT.709 SDR.")
         if Fraction(verified_video["avg_frame_rate"]) != FPS:

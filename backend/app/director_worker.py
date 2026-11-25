@@ -20,6 +20,7 @@ def direct(jobs, job, stage):
     if raw is None:
         raise DirectorError("The model declined or did not finish the structured response.")
     rationale, operations, proposed = validate_recommendation(raw, context)
+    response = Recommendation.model_validate_json(raw)
     plan = {
         **refs, "id": job_id, "project_id": job["project_id"], "created_at": now(),
         "schema_version": 1, "parent_id": None, "event": "generation",
@@ -31,7 +32,8 @@ def direct(jobs, job, stage):
                        "crossing_events": "rejected", "base_approvals_protected": True},
         "operations": [{**operation, "status": "pending"} for operation in operations],
         "usage": cost,
-        "finishing": Recommendation.model_validate_json(raw).finishing,
+        "finishing": response.finishing,
+        "visual_ideas": response.visual_ideas,
     }
     stage("saving_director")
     jobs.complete(job_id, lambda db: store.write(db, plan))
