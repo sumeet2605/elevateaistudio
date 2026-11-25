@@ -91,7 +91,7 @@ The input estimate is approximate and includes the instructions, request metadat
 
 ## Render and approve a portrait MP4
 
-1. Review the current AI Director plan, including caption emphasis and any additional cuts. The studio uses the approved silence cuts and accepted director cuts. Accepted hooks and B-roll ideas stay advisory. Accepted zoom or unsupported range-specific audio operations must be reviewed again before rendering.
+1. Review the current AI Director plan, including caption emphasis and any additional cuts. The studio uses the approved silence cuts and accepted director cuts. Accepted hooks and B-roll ideas stay advisory. Accepted zooms apply a brief centered push-in on the edited video. Unsupported range-specific audio operations must be reviewed again before rendering.
 2. Open **Render**, check the selected plan and choose **Generate Preview**. Standard uses x264 veryfast with CRF 22 and AAC at 160 kbps. High uses x264 medium with CRF 17 and AAC at 192 kbps. Fit preserves the entire source frame on the brand background. Crop fills the portrait frame with a centred crop.
 3. Play the preview and inspect the cuts and caption style. Choose **Approve preview** to enable **Download Final MP4**, or **Reject preview** and refine the plan. A later revision of the plan, brand, transcript, or source makes the prior approval stale. Older previews remain in render history.
 

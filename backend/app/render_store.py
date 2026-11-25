@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from .director import DirectorPlan
 from .director_store import DirectorStore, reviewed_plan
-from .render_manifest import RenderManifest, RenderSettings, frame_spans
+from .render_manifest import RenderManifest, RenderSettings, Zoom, frame_spans
 from .timeline import Span
 
 RENDER = "render"
@@ -104,10 +104,14 @@ class Renders:
         if reviewed["brand"]["background_music"] != "none":
             notices.append("The brand’s optional music preference is deferred for this preview.")
         highlights = []
+        zooms = []
         for operation in reviewed["reviewed_events"]:
             kind = operation["kind"]
             if kind == "emphasis":
                 highlights.append(Span(start_ms=operation["start_ms"], end_ms=operation["end_ms"]))
+            elif kind == "zoom":
+                zooms.append(Zoom(source=Span(start_ms=operation["start_ms"], end_ms=operation["end_ms"]),
+                                  percent=operation["zoom_percent"]))
             elif kind == "hook":
                 notices.append("The accepted hook is advisory. The source order is preserved.")
             elif kind == "b_roll":
@@ -125,7 +129,7 @@ class Renders:
                 brand_revision=plan["brand_revision"], playbook_revision=plan["playbook_revision"],
                 brand=plan["brand"], settings=settings, source_duration_ms=plan["source_duration_ms"],
                 cuts=reviewed["approved_cuts"], retained=retained, frame_ranges=frame_spans(retained),
-                emphasis=highlights, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
+                emphasis=highlights, zooms=zooms, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
                 notices=notices,
             )
         except ValidationError as error:

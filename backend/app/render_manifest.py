@@ -49,6 +49,11 @@ def milliseconds(frames: int):
     return (frames * 1000 + FPS // 2) // FPS
 
 
+class Zoom(BaseModel, frozen=True):
+    source: Span
+    percent: int = Field(gt=100, le=125, strict=True)
+
+
 class RenderManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -68,6 +73,7 @@ class RenderManifest(BaseModel):
     retained: list[Span]
     frame_ranges: list[FrameRange]
     emphasis: list[Span]
+    zooms: list[Zoom] = Field(default_factory=list)
     voice_leveling: bool
     notices: list[str]
 
@@ -83,7 +89,30 @@ class RenderManifest(BaseModel):
         if any(not any(span.start_ms <= item.start_ms < item.end_ms <= span.end_ms for span in self.retained)
                for item in self.emphasis):
             raise ValueError("Caption emphasis crosses a removed range.")
+        previous = 0
+        for zoom in self.zooms:
+            if zoom.percent > self.brand.max_zoom_percent or zoom.source.start_ms < previous:
+                raise ValueError("Zooms must be ordered, disjoint, and within the brand magnification limit.")
+            if not any(item.start_ms <= zoom.source.start_ms < zoom.source.end_ms <= item.end_ms
+                       for item in self.retained):
+                raise ValueError("A zoom crosses a removed range.")
+            previous = zoom.source.end_ms
+        if len(self.edited_zooms()) != len(self.zooms):
+            raise ValueError("An accepted zoom does not cover a complete retained frame.")
         return self
+
+    def edited_zooms(self):
+        mapped = []
+        for zoom in self.zooms:
+            offset = 0
+            for keep in self.frame_ranges:
+                start = max(keep.start_frame, (zoom.source.start_ms * FPS + 999) // 1000)
+                end = min(keep.end_frame, zoom.source.end_ms * FPS // 1000)
+                if start < end:
+                    mapped.append((start - keep.start_frame + offset, end - keep.start_frame + offset, zoom.percent))
+                    break
+                offset += keep.duration
+        return mapped
 
     @property
     def total_frames(self):

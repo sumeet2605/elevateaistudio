@@ -239,16 +239,27 @@ def test_running_render_cancellation_leaves_no_output(studio, monkeypatch):
     assert not list(settings.data_dir.glob("projects/*/renders/*"))
 
 
-def test_accepted_zoom_is_explicitly_blocked(studio, monkeypatch):
-    client, _, _ = studio
-    root, _, payload = prepared(studio, monkeypatch)
+def test_accepted_zoom_renders_on_the_edited_clock(studio, monkeypatch):
+    client, _, jobs = studio
+    root, worker, payload = prepared(studio, monkeypatch)
     current = f"{root}/director/revisions/{payload['plan_id']}"
     plan = client.get(current).json()
     zoom = next(i for i, op in enumerate(plan["operations"]) if op["kind"] == "zoom")
     new = client.post(f"{current}/operations/{zoom}", json={"status": "accepted"}).json()
     response = client.post(root + "/render", json={**payload, "plan_id": new["id"]})
-    assert response.status_code == 422
-    assert "zoom" in response.json()["detail"]
+    assert response.status_code == 202, response.text
+    manifest = Renders(jobs).manifest(response.json()["id"])
+    (start, end, percent), = manifest.edited_zooms()
+    assert start < round(plan["operations"][zoom]["start_ms"] * 30 / 1000)
+    assert end > start and percent == plan["operations"][zoom]["zoom_percent"]
+    graph = ffmpeg_args(FFMPEG, Path("source.mp4"), manifest, 0, 1)
+    graph = graph[graph.index("-filter_complex") + 1]
+    assert f"between(on,{start},{end - 1})" in graph
+    assert graph.index("zoompan") < graph.index("ass=filename")
+    worker.process(jobs.claim())
+    result = client.get(root + "/render").json()
+    assert result["job"]["status"] == "completed", result["job"]["error"]
+    assert result["history"][0]["manifest"]["zooms"][0]["percent"] == percent
 
 
 def test_audio_and_video_markers_together_after_cut(tmp_path):

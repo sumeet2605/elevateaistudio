@@ -62,9 +62,20 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
         vout, aout = "[vjoin]", "[ajoin]"
     else:
         vout, aout = "[outv0]", "[outa0]"
+    zoom_filter = ""
+    if manifest.zooms:
+        terms = []
+        for start, end, percent in manifest.edited_zooms():
+            ramp = min(6, max(1, (end - start) // 3))
+            strength = (percent - 100) / 100
+            terms.append(f"if(between(on,{start},{end - 1}),{strength:.2f}*"
+                         f"min(1,min((on-{start}+1)/{ramp},({end}-on)/{ramp})),0)")
+        expression = "+".join(["1", *terms])
+        zoom_filter = (f"zoompan=z='{expression}':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2'"
+                       f":d=1:s=1080x1920:fps={FPS},")
     # Convert the source's display aspect to square pixels before fitting or cropping.
     nodes.append(f"{vout}settb=1/{FPS},setpts=N,scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,"
-                 f"{framing},setsar=1,ass=filename=captions.ass:fontsdir=fonts,format=yuv420p[v]")
+                 f"{framing},setsar=1,{zoom_filter}ass=filename=captions.ass:fontsdir=fonts,format=yuv420p[v]")
     leveling = "acompressor=threshold=0.126:ratio=2:attack=15:release=150:makeup=1.25," if manifest.voice_leveling else ""
     nodes.append(f"{aout}{leveling}alimiter=limit=0.95:level=0:attack=1,asetpts=N/SR/TB[a]")
     preset, crf, audio_rate = ("medium", "17", "192k") if manifest.settings.quality == "high" else ("veryfast", "22", "160k")
