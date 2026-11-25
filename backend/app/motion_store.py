@@ -138,7 +138,9 @@ def motion_routes(renders):
             current = next((item for item in history if plan and item["plan_id"] == plan["id"]), None)
             active_face = current["face_version"] if current else None
             analysis = store.face(db, project_id, active_face)
-            return {"plan_id": plan["id"] if plan else None, "current": current, "history": history,
+            playbook = PLAYBOOKS[plan["playbook_revision"].split("@")[0]] if plan else None
+            target = min(playbook.motion_target, playbook.motion_max, plan["brand"]["max_zoom_percent"]) if playbook else 105
+            return {"plan_id": plan["id"] if plan else None, "default_zoom": target, "current": current, "history": history,
                     "suggestions": suggested_events(plan) if plan else [],
                     "analysis": analysis, "latest_analysis": store.face(db, project_id),
                     "job": store.jobs.public(store.jobs.latest(db, project_id, FACE_ANALYSIS))}

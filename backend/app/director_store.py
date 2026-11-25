@@ -134,6 +134,7 @@ class DirectorStore:
             "brand": brand["settings"], "playbook": playbook.model_dump(),
             "brand_revision": brand["id"], "playbook_revision": f"{playbook.id}@{playbook.revision}",
             "camera_motion": {"maximum": maximum, "transition": transition, "guidance": style,
+                              "target": min(maximum, brand["settings"]["max_zoom_percent"], playbook.motion_target),
                               "face_summary": face["summary"] if face else None, "other_approved_cuts": current_cuts,
                               "existing": saved.get("events", suggested_events(current_plan) if current_plan else [])},
         }

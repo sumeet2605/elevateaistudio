@@ -250,7 +250,11 @@ def test_accepted_zoom_renders_on_the_edited_clock(studio, monkeypatch, speed):
     response = client.post(root + "/render", json={**payload, "plan_id": new["id"], "settings": {"playback_speed": speed}})
     assert response.status_code == 202, response.text
     manifest = Renders(jobs).manifest(response.json()["id"])
-    (start, end, percent), = manifest.edited_zooms()
+    (event,) = manifest.motion_events
+    start, end = manifest.map_motion_span(event.source)
+    percent = event.end_zoom
+    assert (event.start_zoom, percent, event.strategy, event.transition, event.easing) == (
+        100, 106, "center", "smooth", "ease-in-out")
     assert start < round(plan["operations"][zoom]["start_ms"] * 30 / 1000)
     assert end > start and percent == plan["operations"][zoom]["zoom_percent"]
     graph = ffmpeg_args(FFMPEG, Path("source.mp4"), manifest, 0, 1)
@@ -260,7 +264,7 @@ def test_accepted_zoom_renders_on_the_edited_clock(studio, monkeypatch, speed):
     worker.process(jobs.claim())
     result = client.get(root + "/render").json()
     assert result["job"]["status"] == "completed", result["job"]["error"]
-    assert result["history"][0]["manifest"]["zooms"][0]["percent"] == percent
+    assert result["history"][0]["manifest"]["motion_events"][0]["end_zoom"] == percent
     metadata = result["history"][0]["metadata"]
     assert abs(metadata["duration_seconds"] - manifest.total_frames / 30 / speed) < 0.05
     assert abs(metadata["video_seconds"] - metadata["audio_seconds"]) < 0.05

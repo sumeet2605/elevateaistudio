@@ -17,7 +17,7 @@ type Motion = { id: string; source: { start_ms: number; end_ms: number }; start_
   status: "pending" | "accepted" | "rejected" };
 type Revision = { id: string; settings: Camera; events: Motion[]; face_version: string | null; created_at: string };
 type Job = { id: string; status: string; progress: number | null; error?: string };
-type State = { plan_id: string | null; current: Revision | null; history: Revision[]; analysis: Analysis | null;
+type State = { default_zoom: number; plan_id: string | null; current: Revision | null; history: Revision[]; analysis: Analysis | null;
   latest_analysis: Analysis | null; job: Job | null; suggestions: Motion[] };
 
 const center = { x: 0.5, y: 0.5 };
@@ -109,7 +109,7 @@ export default function MotionStudio({ projectId, sourceUrl, position, duration,
   function add() {
     const end = Math.min(Math.round(duration * 1000), sourceMs + 1800);
     const item: Motion = { id: crypto.randomUUID(), source: { start_ms: Math.max(0, Math.min(sourceMs, end - 100)), end_ms: end },
-      start_zoom: 100, end_zoom: 105, strategy: "center", focus: center, transition: "smooth", easing: "ease-in-out",
+      start_zoom: 100, end_zoom: state?.default_zoom ?? 105, strategy: "center", focus: center, transition: "smooth", easing: "ease-in-out",
       reason: "Manual camera emphasis.", status: "pending" };
     setEvents((saved) => [...saved, item]); setSelected(item.id);
   }

@@ -7,8 +7,8 @@
     "hook_handling": "Point to a recorded opening that names a relatable tension or small shift.",
     "caption_emphasis": "Highlight one grounded phrase at a time.",
     "max_zooms_per_minute": 3,
-    "motion_max": 115, "motion_transition": "smooth",
-    "motion_guidance": "Aim for 2–4 gentle zooms per edited minute when useful. Preserve reflective space.", "b_roll": "Suggest simple images of everyday routines only if they clarify the message.",
+    "motion_target": 106, "motion_max": 115, "motion_transition": "smooth",
+    "motion_guidance": "Prefer centred, eased pushes from 100% toward 106% when emphasis earns it. Aim for 2–4 per edited minute when useful. Preserve reflective space.", "b_roll": "Suggest simple images of everyday routines only if they clarify the message.",
     "transitions": "minimal", "target_style": "Premium cinematic life coaching with a practical spiritual tone"
   },
   {
