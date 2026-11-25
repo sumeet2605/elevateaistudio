@@ -1,0 +1,42 @@
+[
+  {
+    "id": "mystical-sumeet", "revision": 1, "name": "Mystical Sumeet",
+    "objective": "Turn a reflective moment into one practical action.",
+    "pacing": "Measured, with space after an important thought.",
+    "pause_preservation": "Keep breathing room around reflective phrases. Suggest cuts only for clearly redundant gaps.",
+    "hook_handling": "Point to a recorded opening that names a relatable tension or small shift.",
+    "caption_emphasis": "Highlight one grounded phrase at a time.",
+    "max_zooms_per_minute": 3, "b_roll": "Suggest simple images of everyday routines only if they clarify the message.",
+    "transitions": "minimal", "target_style": "Premium cinematic life coaching with a practical spiritual tone"
+  },
+  {
+    "id": "educational", "revision": 1, "name": "Educational",
+    "objective": "Make one lesson easy to understand and recall.",
+    "pacing": "Brisk between ideas with breathing room before a new step.",
+    "pause_preservation": "Keep pauses that separate examples or steps.",
+    "hook_handling": "Identify a recorded line stating the problem or result.",
+    "caption_emphasis": "Highlight key terms and numbered steps.",
+    "max_zooms_per_minute": 5, "b_roll": "Suggest diagrams or concrete examples as optional ideas.",
+    "transitions": "hard-cuts", "target_style": "Clear short-form explanatory video"
+  },
+  {
+    "id": "storytelling", "revision": 1, "name": "Storytelling",
+    "objective": "Preserve a coherent setup, turning point, and payoff.",
+    "pacing": "Let the setup breathe and tighten redundant gaps after the turning point.",
+    "pause_preservation": "Keep pauses before revelations and after meaningful lines.",
+    "hook_handling": "Recommend a recorded opening that creates curiosity while preserving context.",
+    "caption_emphasis": "Highlight a turning point or concrete image.",
+    "max_zooms_per_minute": 4, "b_roll": "Suggest scene-setting imagery consistent with recorded details.",
+    "transitions": "minimal", "target_style": "Personal short-form narrative"
+  },
+  {
+    "id": "authority", "revision": 1, "name": "Authority",
+    "objective": "Present one credible claim and its support.",
+    "pacing": "Direct and steady with short breaks between evidence.",
+    "pause_preservation": "Keep brief pauses after proof or instructions.",
+    "hook_handling": "Select a recorded line that states a defensible point.",
+    "caption_emphasis": "Highlight a concrete claim or call to action.",
+    "max_zooms_per_minute": 4, "b_roll": "Suggest existing examples or illustrative evidence. Avoid invented evidence.",
+    "transitions": "hard-cuts", "target_style": "Confident expert talking head"
+  }
+]

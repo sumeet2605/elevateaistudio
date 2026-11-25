@@ -10,6 +10,8 @@ from .analysis_store import ANALYSIS, AnalysisStore
 from .analysis_worker import analyse
 from .audio import AudioError, extract_audio
 from .config import Settings
+from .director_store import DIRECTOR, DirectorStore
+from .director_worker import direct
 from .jobs import Cancelled, Jobs
 from .projects import Projects
 from .transcription import FasterWhisper, Transcript, TranscriptionSettings, segment_from_model
@@ -44,6 +46,9 @@ class Worker:
 
         published = False
         try:
+            if job["type"] == DIRECTOR:
+                direct(self.jobs, job, stage)
+                return
             if job["type"] == ANALYSIS:
                 analyse(self.settings, self.jobs, job, stage)
                 return
@@ -118,6 +123,7 @@ def main():
     jobs = Jobs(projects)
     jobs.initialize()
     AnalysisStore(jobs).initialize()
+    DirectorStore(jobs).initialize()
     engine = FasterWhisper(TranscriptionSettings.from_env(settings.data_dir))
     worker = Worker(settings, jobs, engine)
     for event in (signal.SIGTERM, signal.SIGINT):

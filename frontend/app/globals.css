@@ -134,3 +134,17 @@ video { background: #08090a; display: block; width: 100%; height: auto; max-heig
 .cut-status { margin-left: auto; color: var(--gold); font-size: 11px; text-transform: capitalize; }
 .cut-status.accepted, .cut-status.modified { color: #8bc7a3; } .cut-status.rejected { color: #dd9b9d; }
 .cut-adjust { display: grid; grid-template-columns: 1fr 1fr auto; gap: 6px; align-items: end; margin-top: 9px; }
+
+.workspace-tabs { flex-wrap: wrap; row-gap: 1px; }
+.brand-preview { display: grid; gap: 4px; padding: 19px; border-radius: 8px; margin: 13px 0; border: 1px solid var(--line); }
+.brand-preview strong { font-size: 21px; }
+.brand-preview small { opacity: .8; }
+.settings-grid select { width: 100%; color: var(--text); background: #121315; border: 1px solid var(--line); border-radius: 5px; padding: 4px 6px; }
+.settings-grid input[type=color] { height: 30px; padding: 2px 4px; }
+.director-lanes { display: grid; gap: 5px; margin: 13px 0 10px; }
+.director-lanes > div { display: grid; grid-template-columns: 100px 1fr; align-items: center; color: var(--muted); font-size: 11px; }
+.director-lanes > div > div { position: relative; background: #101113; height: 12px; border-radius: 3px; overflow: hidden; }
+.director-lanes i { position: absolute; height: 100%; min-width: 2px; background: var(--gold); }
+.director-lanes .lane-0 { background: #579b74; } .director-lanes .lane-2 { background: #d5c8ae; } .director-lanes .lane-3 { background: #9b88bf; }
+.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+.comparison > div { border: 1px solid var(--line); padding: 8px; border-radius: 6px; overflow-wrap: anywhere; }

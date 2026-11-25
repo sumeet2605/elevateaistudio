@@ -7,7 +7,10 @@ import { api, request } from "./api";
 import Transcription from "./transcription";
 import SilenceDetection from "./silence";
 
-const tabs = ["source", "transcription", "silence"] as const;
+import BrandKit from "./brand-kit";
+import DirectorStudio from "./director-studio";
+
+const tabs = ["source", "transcription", "silence", "brand", "director"] as const;
 type Tab = typeof tabs[number];
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -165,7 +168,7 @@ export default function Studio() {
               <button className="primary" disabled={!ready || !!pending || !title.trim()}><Plus size={17}/> Create project</button>
             </form>
           </section>
-          {media && <div className="workspace-tabs" role="tablist" aria-label="Project workspace"
+          {active && <div className="workspace-tabs" role="tablist" aria-label="Project workspace"
             onKeyDown={(event) => {
               if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
               event.preventDefault();
@@ -180,8 +183,12 @@ export default function Studio() {
               tabIndex={tab === "transcription" ? 0 : -1} onClick={() => selectTab("transcription")}>Transcription</button>
             <button id="silence-tab" role="tab" aria-selected={tab === "silence"} aria-controls="silence-panel"
               tabIndex={tab === "silence" ? 0 : -1} onClick={() => selectTab("silence")}>Silence Detection</button>
+            <button id="brand-tab" role="tab" aria-selected={tab === "brand"} aria-controls="brand-panel"
+              tabIndex={tab === "brand" ? 0 : -1} onClick={() => selectTab("brand")}>Brand Kit</button>
+            <button id="director-tab" role="tab" aria-selected={tab === "director"} aria-controls="director-panel"
+              tabIndex={tab === "director" ? 0 : -1} onClick={() => selectTab("director")}>AI Director</button>
           </div>}
-          <div className={media && tab !== "source" ? "review-grid" : undefined}>
+          <div className={active && tab !== "source" ? "review-grid" : undefined}>
           <section className="panel source" id="source-panel"
             role={media && tab === "source" ? "tabpanel" : undefined}
             aria-labelledby={media && tab === "source" ? "source-tab" : undefined}>
@@ -218,6 +225,8 @@ export default function Studio() {
             seek={seek} />}
           {media && active && tab === "silence" && <SilenceDetection key={active.id} projectId={active.id}
             hasAudio={!!media.audio_codec} ready={videoReady} position={position} seek={seek} />}
+          {active && tab === "brand" && <BrandKit key={active.id} projectId={active.id}/>}
+          {active && tab === "director" && <DirectorStudio key={active.id} projectId={active.id} ready={videoReady} seek={seek}/>}
           </div>
         </main>
       </div>

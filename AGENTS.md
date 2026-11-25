@@ -11,3 +11,4 @@
 - Keep routine tests independent of model downloads. Run the opt-in real speech test when changing the inference path.
 - Keep silence detection reviewable. Give VAD and transcript word boundaries priority over amplitude and retain reviewed plans when regenerating.
 - Use integer source milliseconds for cut plans and keep rendering out of the analysis worker.
+- Keep director inference behind explicit paid consent and preserve model, input, and brand revision snapshots for every job. Never pass executable paths or commands through the plan schema.

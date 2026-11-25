@@ -79,6 +79,16 @@ Peak and RMS are reported in dBFS relative to full-scale digital amplitude. The 
 
 The worker analyses the first audio stream, preserves channel count for measurements, and checks VAD on each channel. This protects speech that appears on only one side of a stereo recording. It stops evaluating candidates at the end of the available audio, even when the video continues. VAD and transcription can miss speech or mistake other sounds for speech. Listen before approving cuts, especially with music, crosstalk, or soft voices.
 
+## Brand Kit and AI Director
+
+Open **Brand Kit** on any project to configure its colours, typography, caption placement, zooms, transitions, audio, export size, and intro or outro conventions. Each save makes a revision. Restoring a revision saves a new copy. The default closing phrase is a style convention. The director can quote only timed recorded words.
+
+On a project with a transcript and silence plan, open **AI Director**, choose a playbook, and use **Estimate input** or **Generate edit plan**. Four versioned playbooks are available. Generated decisions can be accepted or rejected individually. The review timeline highlights previous silence approvals and proposed operations. Compare or restore earlier revisions and export the reviewed plan as JSON. The export contains both historical suggestions and explicit approved cuts and reviewed events.
+
+The default `ELEVATE_DIRECTOR_MODE=mock` uses deterministic local recommendations and incurs no API cost. To use OpenAI, set `ELEVATE_DIRECTOR_MODE=openai` and `OPENAI_API_KEY` in the root `.env`, then restart the API and worker. Choose a model compatible with strict Responses API structured output using `ELEVATE_DIRECTOR_MODEL`. Generations and explicit retries require confirmation in OpenAI mode. The worker sends the transcript and limited editing context to OpenAI. It omits video, audio, project names, filenames, and local paths. Cancellation is cooperative while an OpenAI request is in flight and the request can still incur a charge.
+
+The input estimate is approximate and includes the instructions, request metadata, and schema. API input, cached, and output tokens are recorded when returned, including invalid plans and refusals that report usage. Configure the matching model's per-million-token rates to calculate cost. The app reports cost as unavailable if relevant rates or API usage are missing. See the [OpenAI model page](https://developers.openai.com/api/docs/models/gpt-5-mini).
+
 ## Checks
 
 ```sh
@@ -102,3 +112,9 @@ The Day 3 end-to-end test uses a 20.734-second synthesized speech fixture and re
 The GitHub Actions workflow runs the backend and frontend checks once the repository is pushed to GitHub.
 
 See [Architecture](ARCHITECTURE.md) for the system design and [Roadmap](ROADMAP.md) for milestone boundaries.
+
+The separate paid integration test sends the synthesized coaching sample's transcript to OpenAI. Run it only when you intend to authorize that request.
+
+```sh
+ELEVATE_REAL_DIRECTOR=1 .venv/bin/python -m pytest -q -s backend/tests/test_real_director.py
+```

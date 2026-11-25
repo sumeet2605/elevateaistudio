@@ -43,13 +43,18 @@ Evidence includes up to 600 waveform buckets and the quiet and speech intervals.
 
 The editing plan uses integer milliseconds and half-open ranges. Source timestamps inside removed ranges map to null. The source endpoint maps to edited duration. At an internal edited seam, the reverse mapping chooses the next retained source range. The edited endpoint maps to the end of the final retained source range. The approved cut union determines retained spans and estimated duration. The original and transcript use their existing immutable storage.
 
+## Day 4 brand and director
+
+Brand changes append immutable per-project revisions. Playbooks are versioned, schema-validated configuration files. Director jobs snapshot the chosen brand, playbook, transcript, approved and rejected silence decisions, source metadata, model, and pricing on enqueue. The prompt includes timestamped transcript data and editing constraints. The backend binds the result to project-local revision IDs and the original SHA-256. There is one active director job per project and up to two explicitly requested retries per generation.
+
+The backend uses strict Responses API JSON Schema with no tools. It separately validates source bounds and identity, exact word timing, candidate boundaries, same-layer overlaps, brand zoom and audio constraints, and playbook zoom frequency. It rejects operations crossing existing or proposed cut ranges. Additional cuts must be inside pending high-confidence Day 3 proposals. Hook and caption text are assembled only from indexed transcript words. Hook and B-roll decisions remain advisory. A caption emphasis decision carries a range and words for future rendering. Brand outro text is never inserted as dialogue.
+
+Every generation, review, or restore creates a new project-scoped revision. Approved silence ranges form the base. Accepted director cuts extend that base, and accepted events use the existing timeline mapper to derive edited time. The active pointer changes without rewriting old revisions. A silence plan change makes old director revisions read-only and blocks their reviewed export until a fresh draft is generated. Token accounting is attached to jobs separately from validation so billed invalid responses remain visible.
+
 ## Planned Phase 1 components
 
 | Component | Responsibility |
 | --- | --- |
-| Brand configuration | Load versioned caption, voice, zoom, transition, and export settings |
-| Editing playbooks | Supply modular guidance for talking-head reels and future formats |
-| AI director | Use transcript, silence candidates, metadata, brand, and playbook to propose a typed plan through OpenAI Structured Outputs |
 | Caption generation | Convert edited caption spans into styled subtitle assets with brand colors and keyword emphasis |
 | Rendering | Translate approved typed operations into fixed FFmpeg arguments |
 | Preview and export | Preview a versioned render, record approval on that version, and offer its final MP4 |
