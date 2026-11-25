@@ -89,6 +89,14 @@ The default `ELEVATE_DIRECTOR_MODE=mock` uses deterministic local recommendation
 
 The input estimate is approximate and includes the instructions, request metadata, and schema. API input, cached, and output tokens are recorded when returned, including invalid plans and refusals that report usage. Configure the matching model's per-million-token rates to calculate cost. The app reports cost as unavailable if relevant rates or API usage are missing. See the [OpenAI model page](https://developers.openai.com/api/docs/models/gpt-5-mini).
 
+## Edit dynamic captions
+
+Open **Captions** on a reviewed director plan. Choose a versioned preset, use the phone preview to check the style and safe margins, and choose a cue to seek the original. Text edits and manual keywords stay in the draft until **Save caption revision**. Split after a word or merge adjacent cues within the same retained section. If a correction adds words absent from the transcript, the studio requires explicit confirmation. When the number of words changes, it estimates timings for that cue, so check the preview against the audio.
+
+Caption times in the editor are edited-video times at 1×. Rendering applies the chosen output speed and the current saved caption revision. Preview styling in the browser is approximate. Generate an MP4 to inspect actual text shaping, line breaks, and motion. The safe area is a configurable starting point, so verify placement on your publishing surface.
+
+Mystical Gold is the default draft in Captions. A render with no saved caption revision uses the earlier static style, keeping existing projects and previews compatible. Saving or restoring captions creates a new revision, so render and approve a new MP4. Older previews remain playable.
+
 ## Render and approve a portrait MP4
 
 1. Review the current AI Director plan, including caption emphasis and any additional cuts. The studio uses the approved silence cuts and accepted director cuts. Accepted hooks and B-roll ideas stay advisory. Accepted zooms apply a brief centered push-in on the edited video. Unsupported range-specific audio operations must be reviewed again before rendering.

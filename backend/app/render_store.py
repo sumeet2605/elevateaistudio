@@ -28,6 +28,11 @@ class Renders:
     def initialize(self):
         with self.projects.connect() as db:
             db.executescript("""
+                CREATE TABLE IF NOT EXISTS caption_revisions (
+                    id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
+                    plan_id TEXT NOT NULL REFERENCES director_plans(id), payload TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS caption_plan ON caption_revisions(project_id, plan_id);
                 CREATE TABLE IF NOT EXISTS render_inputs (
                     job_id TEXT PRIMARY KEY REFERENCES jobs(id), manifest TEXT NOT NULL
                 );
@@ -80,7 +85,7 @@ class Renders:
             return "The original source no longer matches this plan."
         return None
 
-    def make_manifest(self, project_id, plan_id, settings):
+    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True):
         with self.projects.connect() as db:
             db.execute("BEGIN")
             selected = self.selected(db, project_id, plan_id)
@@ -88,6 +93,7 @@ class Renders:
                 raise HTTPException(409, "Select or restore the director revision before rendering it.")
             raw, plan = selected
             issue = self.revision_issue(db, project_id, plan)
+            caption = self.latest_caption(db, project_id, plan_id) if include_captions else None
         if issue:
             raise HTTPException(409, issue)
         try:
@@ -98,7 +104,8 @@ class Renders:
         if plan["event"] == "generation" or (plan["operations"] and not any(
                 op["status"] in ("accepted", "rejected") for op in plan["operations"])):
             raise HTTPException(409, "Review at least one director recommendation before rendering.")
-        notices = ["Captions use bundled Noto Sans Bold with Noto Sans Devanagari Bold for Hindi."]
+        notices = (["The saved caption revision uses bundled Noto Sans and Noto Sans Devanagari."] if caption
+                   else ["Captions use bundled Noto Sans Bold with Noto Sans Devanagari Bold for Hindi."])
         if any(op["status"] == "pending" for op in plan["operations"]):
             notices.append("Pending recommendations are outside the current edit.")
         if reviewed["brand"]["background_music"] != "none":
@@ -124,6 +131,8 @@ class Renders:
         try:
             return RenderManifest(
                 project_id=project_id, plan_id=plan_id, plan_fingerprint=hashlib.sha256(raw.encode()).hexdigest(),
+                caption_revision=caption["id"] if caption else None,
+                caption_fingerprint=hashlib.sha256(caption["payload"].encode()).hexdigest() if caption else None,
                 source_media_id=plan["source_media_id"], transcript_revision=plan["transcript_revision"],
                 transcript_fingerprint=digest(self.transcript_path(project_id, plan["transcript_revision"])),
                 brand_revision=plan["brand_revision"], playbook_revision=plan["playbook_revision"],
@@ -144,10 +153,31 @@ class Renders:
             raise HTTPException(404, "Render manifest not found.")
         return RenderManifest.model_validate_json(row[0])
 
-    def stale(self, db, manifest):
+    def latest_caption(self, db, project_id, plan_id):
+        return db.execute(
+            "SELECT id,payload FROM caption_revisions WHERE project_id=? AND plan_id=? ORDER BY rowid DESC LIMIT 1",
+            (str(project_id), str(plan_id)),
+        ).fetchone()
+
+    def pinned_caption(self, manifest):
+        with self.projects.connect() as db:
+            row = db.execute("SELECT payload FROM caption_revisions WHERE id=? AND project_id=? AND plan_id=?",
+                             (str(manifest.caption_revision), str(manifest.project_id), str(manifest.plan_id))).fetchone()
+        if row is None or hashlib.sha256(row[0].encode()).hexdigest() != manifest.caption_fingerprint:
+            raise ValueError("The pinned caption revision changed or is missing.")
+        return json.loads(row[0])
+
+    def stale(self, db, manifest, *, check_captions=True):
         selected = self.selected(db, manifest.project_id, manifest.plan_id)
         if not selected or hashlib.sha256(selected[0].encode()).hexdigest() != manifest.plan_fingerprint:
             return "The selected editing-plan revision changed. Generate a new preview."
+        if check_captions:
+            caption = self.latest_caption(db, manifest.project_id, manifest.plan_id)
+            observed_id = caption["id"] if caption else None
+            if observed_id != (str(manifest.caption_revision) if manifest.caption_revision else None) or (
+                caption and hashlib.sha256(caption["payload"].encode()).hexdigest() != manifest.caption_fingerprint
+            ):
+                return "Captions changed. Generate and approve a new preview."
         issue = self.revision_issue(db, manifest.project_id, selected[1])
         if issue:
             return issue
@@ -208,7 +238,7 @@ class Renders:
                 "decision": latest["decision"] if latest else None,
                 "reviewed_at": latest["created_at"] if latest else None,
                 "bound_approval": bool(latest and latest["decision"] == "approved"
-                                       and latest["plan_fingerprint"] == manifest.plan_fingerprint
+                                       and latest["plan_fingerprint"] == manifest.approval_fingerprint
                                        and latest["video_sha256"] == metadata["sha256"]),
                 "stale_reason": self.stale(db, manifest)}
 
@@ -236,7 +266,7 @@ class Renders:
             if decision == "approved":
                 self.validate_download(item, require_approval=False)
             db.execute("INSERT INTO render_reviews VALUES (?, ?, ?, ?, ?)",
-                       (str(render_id), decision, item["manifest"].plan_fingerprint, item["metadata"]["sha256"],
+                       (str(render_id), decision, item["manifest"].approval_fingerprint, item["metadata"]["sha256"],
                         datetime.now(timezone.utc).isoformat()))
         return self.state(project_id)
 

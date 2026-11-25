@@ -10,9 +10,10 @@ import SilenceDetection from "./silence";
 import BrandKit from "./brand-kit";
 import DirectorStudio from "./director-studio";
 
+import CaptionsStudio from "./captions-studio";
 import RenderStudio from "./render-studio";
 
-const tabs = ["source", "transcription", "silence", "brand", "director", "render"] as const;
+const tabs = ["source", "transcription", "silence", "brand", "director", "captions", "render"] as const;
 type Tab = typeof tabs[number];
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -189,6 +190,8 @@ export default function Studio() {
               tabIndex={tab === "brand" ? 0 : -1} onClick={() => selectTab("brand")}>Brand Kit</button>
             <button id="director-tab" role="tab" aria-selected={tab === "director"} aria-controls="director-panel"
               tabIndex={tab === "director" ? 0 : -1} onClick={() => selectTab("director")}>AI Director</button>
+            <button id="captions-tab" role="tab" aria-selected={tab === "captions"} aria-controls="captions-panel"
+              tabIndex={tab === "captions" ? 0 : -1} onClick={() => selectTab("captions")}>Captions</button>
             <button id="render-tab" role="tab" aria-selected={tab === "render"} aria-controls="render-panel"
               tabIndex={tab === "render" ? 0 : -1} onClick={() => selectTab("render")}>Render</button>
           </div>}
@@ -231,6 +234,7 @@ export default function Studio() {
             hasAudio={!!media.audio_codec} ready={videoReady} position={position} seek={seek} />}
           {active && tab === "brand" && <BrandKit key={active.id} projectId={active.id}/>}
           {active && tab === "director" && <DirectorStudio key={active.id} projectId={active.id} ready={videoReady} position={position} seek={seek}/>}
+          {active && tab === "captions" && <CaptionsStudio key={active.id} projectId={active.id} sourceUrl={api + mediaEndpoint} seek={seek}/>}
           {active && tab === "render" && <RenderStudio key={active.id} projectId={active.id} ready={videoReady} seek={seek}/>}
           </div>
         </main>

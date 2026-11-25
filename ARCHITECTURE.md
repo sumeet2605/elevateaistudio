@@ -70,3 +70,9 @@ Use integer milliseconds on the source timeline with half-open intervals, where 
 Store accepted keep spans in source order. For each span, add the lengths of the preceding retained spans to get its start on the edited timeline. Within that span, subtract its source start from the event timestamp, then add its edited start. Split an event around a cut by intersecting it with each retained span before mapping. For example, keeping source 2–5 s and 9–11 s puts source 10 s at edited 4 s.
 
 Save the original, the transcript, and immutable plan and render revisions separately. Bind human approval to the reviewed revision before publishing. A new edit creates a new revision, so undo can restore an earlier selection. Extend the local worker and SQLite job records when rendering lands. Give each render attempt a unique output directory and publish artifacts only after success.
+
+## Day 7 caption revisions
+
+The caption workspace builds draft cues from the pinned transcript and frame-aligned retained ranges. Cue times are canonical edited milliseconds at 1×. Revised text, timings and emphasis live in immutable caption rows tied to the director revision, with the source and transcript identities and a before/after correction log. The active caption revision and its digest join the approval fingerprint. Caption changes stale prior approvals while keeping prior preview bytes accessible.
+
+The worker retimes the chosen revision to output speed before compiling ASS. Each cue or word-boundary event uses the same positioned line layout. HarfBuzz/libass shapes mixed scripts using bundled Noto faces. Animation is derived from cue time so an active-word update does not reset the fade or pulse. The HTML phone preview uses the original video and edited-to-source mapping with approximate CSS typography.

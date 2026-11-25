@@ -155,3 +155,17 @@ video { background: #08090a; display: block; width: 100%; height: auto; max-heig
 .caption-style { border-radius: 7px; margin: 8px 0; padding: 15px 10px; text-align: center; font-size: clamp(14px, 2vw, 19px); font-weight: bold; }
 .render-cuts { margin: 6px 0; font-size: 12px; }
 .render-cuts li { margin: 5px 0; }
+
+.caption-phone { position:relative; container-type:inline-size; aspect-ratio:9/16; width:min(100%,390px); margin:12px auto 0; background:#101113; overflow:hidden; border-radius:9px; }
+.caption-phone video { position:absolute; width:100%; height:100%; max-height:none; object-fit:contain; }
+.caption-safe { position:absolute; border:1px dashed #edc77c9c; pointer-events:none; }
+.caption-live { position:absolute; pointer-events:none; overflow:hidden; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:var(--caption-lines); overflow-wrap:anywhere; transform-origin:50% 100%; }
+.caption-live.motion-fade { animation-name:caption-fade; animation-timing-function:ease-out; }
+.caption-live.motion-scale { animation-name:caption-scale; animation-timing-function:ease-out; }
+@keyframes caption-fade { from { opacity:0; } to { opacity:1; } }
+@keyframes caption-scale { from { transform:scaleY(.96); } to { transform:scaleY(1); } }
+@media (prefers-reduced-motion:reduce) { .caption-live { animation:none; } }
+.caption-editor { padding-top:10px; }
+.caption-editor label { display:block; font-size:12px; color:var(--muted); margin:6px 0; }
+.caption-editor textarea,.caption-editor select { display:block; width:100%; background:#101113; color:var(--text); border:1px solid var(--line); border-radius:5px; padding:5px; }
+.caption-editor button[aria-pressed=true] { color:#edc77c; border-color:#edc77c; }

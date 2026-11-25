@@ -9,6 +9,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from .analysis_api import analysis_routes
 from .analysis_store import AnalysisStore
+from .caption_api import caption_routes
 from .config import Settings
 from .director_api import director_routes
 from .director_store import DirectorStore
@@ -115,6 +116,7 @@ def create_app(settings: Settings | None = None):
     app.include_router(analysis_routes(analyses))
     app.include_router(director_routes(director))
     app.include_router(render_routes(renders))
+    app.include_router(caption_routes(renders))
     return app
 
 

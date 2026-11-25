@@ -26,7 +26,7 @@ def width(text):
                else 1 if ord(char) >= 0x900 else 0.62 for char in text)
 
 
-def captions_for(manifest: RenderManifest, transcript: Transcript):
+def captions_for(manifest: RenderManifest, transcript: Transcript, grouping=None):
     # A missing word clock can use the recorded segment as one timed unit.
     # If that untimed unit straddles a seam, omit it rather than invent word timing.
     atoms = []
@@ -40,6 +40,11 @@ def captions_for(manifest: RenderManifest, transcript: Transcript):
     offset = 0
     used = set()
     style = manifest.settings
+    word_limit = grouping.words_per_cue if grouping else style.caption_words
+    pause_limit = grouping.pause_ms if grouping else style.caption_gap_ms
+    width_limit = (grouping.max_lines * (1080 * (100 - grouping.safe_left - grouping.safe_right)
+                   / 100 / grouping.font_size - 1)) if grouping else 29
+    minimum = grouping.min_ms if grouping else style.caption_min_ms
     for keep in manifest.frame_ranges:
         start, end = milliseconds(keep.start_frame), milliseconds(keep.end_frame)
         limit = milliseconds(offset + keep.duration)
@@ -56,10 +61,12 @@ def captions_for(manifest: RenderManifest, transcript: Transcript):
         groups = []
         current = []
         for texts, low, high, highlight in mapped:
-            if current and (low - current[-1][2] > style.caption_gap_ms
+            if current and (low - current[-1][2] > pause_limit
+                            or (grouping and current[-1][0][-1].endswith((".", "?", "!", "।"))
+                                and (grouping.sentence_first or low - current[-1][2] >= 100))
                             or high - current[0][1] > 3200
-                            or sum(len(item[0]) for item in current) + len(texts) > style.caption_words
-                            or width(" ".join(" ".join(item[0]) for item in current) + " " + " ".join(texts)) > 29):
+                            or sum(len(item[0]) for item in current) + len(texts) > word_limit
+                            or width(" ".join(" ".join(item[0]) for item in current) + " " + " ".join(texts)) > width_limit):
                 groups.append(current)
                 current = []
             current.append((texts, low, high, highlight))
@@ -69,7 +76,9 @@ def captions_for(manifest: RenderManifest, transcript: Transcript):
         for index, group in enumerate(groups):
             begin = group[0][1]
             following = groups[index + 1][0][1] if index + 1 < len(groups) else limit
-            stop = min(limit, following, max(group[-1][2], begin + style.caption_min_ms))
+            reading_ms = min(1600, math.ceil(1000 * len(" ".join(
+                text for atom in group for text in atom[0])) / grouping.reading_cps)) if grouping else 0
+            stop = min(limit, following, max(group[-1][2], begin + max(minimum, reading_ms)))
             if stop - begin < 40:
                 omitted += sum(len(item[0]) for item in group)
                 continue

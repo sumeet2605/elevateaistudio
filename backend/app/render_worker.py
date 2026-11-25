@@ -6,6 +6,7 @@ from pathlib import Path
 from time import perf_counter
 
 from .captions import ass_asset, captions_for
+from .dynamic_captions import CaptionStyle, Cue, dynamic_ass, retime_cues, wrapping
 from .ffmpeg_render import HDR_TRANSFERS, ffmpeg_args, run_ffmpeg, streams
 from .render_manifest import FPS
 from .render_store import Renders, digest
@@ -34,7 +35,18 @@ def render_video(settings, jobs, job, stage):
             or abs(transcript.source_duration * 1000 - manifest.source_duration_ms) >= 1):
         raise ValueError("The transcript does not match the original source.")
     stage("building_captions")
-    cues, omitted = captions_for(manifest, transcript)
+    caption_start = perf_counter()
+    style = None
+    if manifest.caption_revision:
+        revision = store.pinned_caption(manifest)
+        style = CaptionStyle.model_validate(revision["style"])
+        cues = retime_cues([Cue.model_validate(cue) for cue in revision["cues"]],
+                           manifest.settings.playback_speed, manifest.encoded_ms)
+        omitted = 0
+    else:
+        cues, omitted = captions_for(manifest, transcript)
+    asset = dynamic_ass(style, cues) if style else ass_asset(manifest.brand, cues)
+    caption_seconds = round(perf_counter() - caption_start, 6)
     if not cues:
         raise ValueError("No usable recorded caption timestamps remain after the cuts.")
     video, audio, _ = streams(settings.ffprobe, source)
@@ -44,11 +56,11 @@ def render_video(settings, jobs, job, stage):
     work.mkdir()
     published = False
     try:
-        (work / "captions.ass").write_text(ass_asset(manifest.brand, cues), encoding="utf-8")
+        (work / "captions.ass").write_text(asset, encoding="utf-8")
         (work / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
         (work / "fonts").mkdir()
-        for name in ("NotoSans-Bold.ttf", "NotoSansDevanagari-Bold.ttf"):
-            shutil.copyfile(FONTS / name, work / "fonts" / name)
+        for font in FONTS.glob("*.ttf"):
+            shutil.copyfile(font, work / "fonts" / font.name)
         executable = shutil.which(settings.ffmpeg)
         if not executable:
             raise ValueError("FFmpeg with libass and libx264 is required to render.")
@@ -78,10 +90,12 @@ def render_video(settings, jobs, job, stage):
             "pixel_format": "yuv420p", "fps": FPS, "color_transfer": verified_video.get("color_transfer"), "duration_seconds": actual,
             "video_seconds": video_length, "audio_seconds": audio_length, "size_bytes": preview.stat().st_size,
             "render_seconds": round(perf_counter() - started, 3), "caption_count": len(cues),
-            "omitted_words": omitted,
+            "omitted_words": omitted, "caption_generation_seconds": caption_seconds,
+            "ass_events": asset.count("\nDialogue:"), "approval_fingerprint": manifest.approval_fingerprint,
             "caption_sample": [{"time_ms": cue.start_ms, "lines": [[
                 {"text": word.text, "highlighted": word.highlighted} for word in line
-            ] for line in cue.lines]} for cue in cues[:3]],
+            ] for line in ([ [word for _, word in line] for line in wrapping(cue.words, style)[0] ]
+                         if style else cue.lines)]} for cue in cues[:3]],
         }
         (work / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
         shutil.rmtree(work / "fonts")

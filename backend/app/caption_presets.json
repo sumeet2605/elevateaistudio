@@ -1,0 +1,6 @@
+{
+  "mystical-gold@1": {"name":"Mystical Gold","style":{"mode":"keyword","animation":"fade","animation_ms":140,"font_size":72,"words_per_cue":7,"reading_cps":18}},
+  "high-impact@1": {"name":"High Impact","style":{"mode":"active","animation":"scale","animation_ms":110,"font_size":86,"words_per_cue":4,"pause_ms":260,"reading_cps":23,"background_opacity":48}},
+  "cinematic-minimal@1": {"name":"Cinematic Minimal","style":{"mode":"static","animation":"fade","animation_ms":200,"font_size":60,"weight":"regular","outline":3,"words_per_cue":12,"pause_ms":520,"min_ms":950,"reading_cps":16,"sentence_first":true}},
+  "educational@1": {"name":"Educational","style":{"mode":"reveal","animation":"none","font_size":68,"words_per_cue":8,"reading_cps":18,"pause_ms":330,"background_opacity":35}}
+}

@@ -1,3 +1,4 @@
+import hashlib
 from typing import Literal
 from uuid import UUID
 
@@ -61,6 +62,8 @@ class RenderManifest(BaseModel):
     schema_version: Literal[1] = 1
     project_id: UUID
     plan_id: UUID
+    caption_revision: UUID | None = None
+    caption_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     plan_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_media_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     transcript_revision: UUID
@@ -114,6 +117,13 @@ class RenderManifest(BaseModel):
                     break
                 offset += keep.duration
         return mapped
+
+    @property
+    def approval_fingerprint(self):
+        if self.caption_revision is None:
+            return self.plan_fingerprint
+        identity = f"{self.plan_fingerprint}:{self.caption_revision}:{self.caption_fingerprint}"
+        return hashlib.sha256(identity.encode()).hexdigest()
 
     @property
     def total_frames(self):
