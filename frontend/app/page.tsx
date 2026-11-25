@@ -11,10 +11,11 @@ import BrandKit from "./brand-kit";
 import DirectorStudio from "./director-studio";
 
 import CaptionsStudio from "./captions-studio";
+import FinishStudio from "./finish-studio";
 import MotionStudio from "./motion-studio";
 import RenderStudio from "./render-studio";
 
-const tabs = ["source", "transcription", "silence", "brand", "director", "captions", "motion", "render"] as const;
+const tabs = ["source", "transcription", "silence", "brand", "director", "captions", "motion", "finish", "render"] as const;
 type Tab = typeof tabs[number];
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -196,6 +197,8 @@ export default function Studio() {
               tabIndex={tab === "captions" ? 0 : -1} onClick={() => selectTab("captions")}>Captions</button>
             <button id="motion-tab" role="tab" aria-selected={tab === "motion"} aria-controls="motion-panel"
               tabIndex={tab === "motion" ? 0 : -1} onClick={() => selectTab("motion")}>Camera &amp; Motion</button>
+            <button id="finish-tab" role="tab" aria-selected={tab === "finish"} aria-controls="finish-panel"
+              tabIndex={tab === "finish" ? 0 : -1} onClick={() => selectTab("finish")}>Colour &amp; Sound</button>
             <button id="render-tab" role="tab" aria-selected={tab === "render"} aria-controls="render-panel"
               tabIndex={tab === "render" ? 0 : -1} onClick={() => selectTab("render")}>Render</button>
           </div>}
@@ -241,6 +244,8 @@ export default function Studio() {
           {active && tab === "captions" && <CaptionsStudio key={active.id} projectId={active.id} sourceUrl={api + mediaEndpoint} seek={seek}/>}
           {active && tab === "motion" && <MotionStudio key={active.id} projectId={active.id} sourceUrl={api + mediaEndpoint}
             position={position} duration={media?.duration_seconds ?? 0} seek={seek}/>}
+          {active && tab === "finish" && <FinishStudio key={active.id} projectId={active.id}
+            duration={media?.duration_seconds ?? 0} position={position}/>}
           {active && tab === "render" && <RenderStudio key={active.id} projectId={active.id} ready={videoReady} seek={seek}/>}
           </div>
         </main>

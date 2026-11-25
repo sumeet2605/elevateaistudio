@@ -1,4 +1,4 @@
-from .director import (PROMPT_VERSION, DirectorError, DirectorSettings, mock_response,
+from .director import (PROMPT_VERSION, DirectorError, DirectorSettings, Recommendation, mock_response,
                        provider, usage_record, validate_recommendation)
 from .director_store import DirectorStore, now
 
@@ -31,6 +31,7 @@ def direct(jobs, job, stage):
                        "crossing_events": "rejected", "base_approvals_protected": True},
         "operations": [{**operation, "status": "pending"} for operation in operations],
         "usage": cost,
+        "finishing": Recommendation.model_validate_json(raw).finishing,
     }
     stage("saving_director")
     jobs.complete(job_id, lambda db: store.write(db, plan))

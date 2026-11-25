@@ -15,6 +15,7 @@ type Render = {
   manifest: { plan_id: string; cuts: Span[]; notices: string[]; brand: Brand; settings: RenderSettings };
   metadata: { created_at: string; sha256: string; width: number; height: number; fps: number; video_codec: string; audio_codec: string;
     duration_seconds: number; render_seconds: number; caption_count: number; omitted_words: number; camera_notice?: string | null;
+    output_audio?: { input_i?: number | null; input_tp?: number | null } | null;
     caption_sample: { time_ms: number; lines: CaptionWord[][] }[] };
 };
 type State = { selected: ProjectPlan | null; job: Job | null; history: Render[] };
@@ -22,7 +23,7 @@ type State = { selected: ProjectPlan | null; job: Job | null; history: Render[] 
 const defaultSettings: RenderSettings = { framing: "fit", quality: "standard", playback_speed: 1, caption_words: 7, caption_gap_ms: 380, caption_min_ms: 650 };
 const stageNames: Record<string, string> = {
   queued: "Waiting for the local worker", extracting_audio: "Preparing render", checking_source: "Checking the original",
-  building_captions: "Building captions", encoding_preview: "Encoding preview", verifying_preview: "Verifying the MP4",
+  building_captions: "Building captions", measuring_audio: "Measuring the edited audio", encoding_preview: "Encoding preview", verifying_preview: "Verifying the MP4",
   publishing_preview: "Saving preview", completed: "Preview ready", failed: "Render failed",
   cancelled: "Render cancelled", cancelling: "Cancellation requested", interrupted: "Render interrupted",
 };
@@ -146,6 +147,7 @@ export default function RenderStudio({ projectId, ready, seek }: { projectId: st
       {playbackError && <p className="alert audio-metrics" role="alert">This browser could not play the preview.</p>}
       <p className="small audio-metrics">{render.metadata.width} × {render.metadata.height} · {render.metadata.fps} fps · H.264 / AAC · {format(render.metadata.duration_seconds * 1000)}{render.manifest.settings.playback_speed === 1.1 ? " · 1.1×" : ""}</p>
       <p className="muted small">{render.metadata.caption_count} caption cues · {render.metadata.render_seconds.toFixed(2)} s render · Plan {render.manifest.plan_id.slice(0, 8)}</p>
+      {render.metadata.output_audio && <p className="muted small">Encoded audio · {render.metadata.output_audio.input_i?.toFixed(1) ?? "—"} LUFS · {render.metadata.output_audio.input_tp?.toFixed(1) ?? "—"} dBTP</p>}
       {render.metadata.camera_notice && <p className="muted small">{render.metadata.camera_notice}</p>}
       {render.stale_reason && <p className="alert audio-metrics" role="status">{render.stale_reason}</p>}
       <div className="transcript-actions">

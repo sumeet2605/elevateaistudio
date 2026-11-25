@@ -72,11 +72,11 @@ class Jobs:
                 "transcript_job_id": artifact["job_id"] if artifact else None,
             }
 
-    def enqueue(self, project_id: UUID, retry: UUID | None = None, *, kind="transcription", prepare=None):
+    def enqueue(self, project_id: UUID, retry: UUID | None = None, *, kind="transcription", prepare=None, require_audio=True):
         media = self.projects.get(project_id)["media"]
         if not media:
             raise HTTPException(409, "Upload an original before starting this job.")
-        if not media["audio_codec"]:
+        if require_audio and not media["audio_codec"]:
             raise HTTPException(422, "The original video has no audio track.")
         job_id = uuid4()
         with self.projects.connect() as db:

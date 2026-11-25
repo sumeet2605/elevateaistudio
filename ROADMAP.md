@@ -15,3 +15,5 @@ Day 6 uses the [coaching reel quality pilot rubric](docs/quality-pilot.md) to va
 Day 7 adds versioned caption presets, correction history, and ASS word effects in a mobile-first Captions workspace.
 
 Day 8 adds the Camera & Motion workspace, local face-analysis caching, reviewed camera moves and revision-bound export approval. The real-footage style default remains pending brand review.
+
+Day 9 adds local Colour & Sound samples, adjustable finishing presets, pinned finishing revisions and encoded loudness verification. The four pilot treatments await visual and listening review.

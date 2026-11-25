@@ -5,11 +5,12 @@ import subprocess
 from pathlib import Path
 
 from .audio import AudioError
+from .finishing import grade_filter, loudnorm, speech_filter
 from .motion_render import baseline_crop, camera_zoom, tracked
 from .render_manifest import FPS, SAMPLE_RATE, RenderManifest
 
 
-def streams(executable, path):
+def streams(executable, path, *, allow_missing_audio=False):
     try:
         output = subprocess.run([
             executable, "-v", "error", "-protocol_whitelist", "file",
@@ -19,16 +20,20 @@ def streams(executable, path):
         payload = json.loads(output.stdout)
         return (next(s for s in payload["streams"] if s["codec_type"] == "video"
                      and not s.get("disposition", {}).get("attached_pic")),
-                next(s for s in payload["streams"] if s["codec_type"] == "audio"), payload["format"])
+                next((s for s in payload["streams"] if s["codec_type"] == "audio"), None)
+                if allow_missing_audio else next(s for s in payload["streams"] if s["codec_type"] == "audio"),
+                payload["format"])
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, StopIteration) as error:
         raise AudioError("Could not inspect the video and audio streams with FFprobe.") from error
 
 
 HDR_TRANSFERS = frozenset({"arib-std-b67", "smpte2084"})
+HDR_TO_SDR = ("zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,"
+              "tonemap=hable:desat=2,zscale=t=bt709:m=bt709:r=tv,format=yuv420p")
 
 
 def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index: int, audio_index: int, *,
-                color_transfer: str | None = None):
+                color_transfer: str | None = None, color_info=None, measured=None, audio_pass=False):
     if type(video_index) is not int or type(audio_index) is not int or min(video_index, audio_index) < 0:
         raise ValueError("Invalid source stream indices.")
     count = len(manifest.frame_ranges)
@@ -43,8 +48,19 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
     frame = ("crop=1080:1920" if crop else
              f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color={colour}")
     hdr = color_transfer in HDR_TRANSFERS
-    tone = ("zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,"
-            "tonemap=hable:desat=2,zscale=t=bt709:m=bt709:r=tv,format=yuv420p," if hdr else "")
+    tone = HDR_TO_SDR + "," if hdr else ""
+    managed = manifest.grade_revision or manifest.voice_revision
+    if not hdr and color_info and managed:
+        matrix = {"bt470bg": "bt601", "smpte170m": "smpte170m", "bt2020nc": "bt2020", "bt709": "bt709"}
+        options = f":in_color_matrix={matrix[color_info['color_space']]}" if color_info.get("color_space") in matrix else ""
+        scale += options + ":out_color_matrix=bt709:out_range=tv"
+        primaries = color_info.get("color_primaries")
+        transfer = color_info.get("color_transfer")
+        known_primaries = {"bt709", "bt470bg", "smpte170m", "smpte240m", "bt2020"}
+        known_transfers = {"bt709", "smpte170m", "smpte240m", "iec61966-2-1"}
+        if primaries in known_primaries and transfer in known_transfers and (primaries, transfer) != ("bt709", "bt709"):
+            tone = (f"zscale=min=bt709:rin=limited:pin={primaries}:tin={transfer}:"
+                    "m=bt709:r=limited:p=bt709:t=bt709,format=yuv420p,")
     framing = f"{focus_crop}{scale},{tone}{frame}"
     vprefix = (f"[0:{video_index}]fps={FPS}:start_time=0,"
                f"tpad=stop_mode=clone:stop_duration={manifest.source_duration_ms / 1000:.3f}")
@@ -55,7 +71,8 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
     else:
         video, audio = vprefix + "[v0]", aprefix + "[a0]"
 
-    nodes = [video, audio]
+    nodes = [video]
+    audio_nodes = [audio]
     for i, span in enumerate(manifest.frame_ranges):
         unit = SAMPLE_RATE // FPS
         samples = span.duration * unit
@@ -67,9 +84,18 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
         )
         nodes.extend([
             f"[v{i}]trim=start_frame={span.start_frame}:end_frame={span.end_frame},setpts=PTS-STARTPTS[outv{i}]",
-            f"[a{i}]atrim=start_sample={span.start_frame * unit}:end_sample={span.end_frame * unit},asetpts=N/SR/TB{fades}[outa{i}]",
         ])
-    if count > 1:
+        audio_nodes.append(
+            f"[a{i}]atrim=start_sample={span.start_frame * unit}:end_sample={span.end_frame * unit},asetpts=N/SR/TB{fades}[outa{i}]"
+        )
+    if not audio_pass:
+        nodes += audio_nodes
+    if audio_pass:
+        nodes = audio_nodes
+        if count > 1:
+            nodes.append("".join(f"[outa{i}]" for i in range(count)) + f"concat=n={count}:v=0:a=1[ajoin]")
+        aout = "[ajoin]" if count > 1 else "[outa0]"
+    elif count > 1:
         nodes.append("".join(f"[outv{i}][outa{i}]" for i in range(count)) + f"concat=n={count}:v=1:a=1[vjoin][ajoin]")
         vout, aout = "[vjoin]", "[ajoin]"
     else:
@@ -89,12 +115,24 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
     video_speed = (f"settb=AVTB,setpts=PTS/{speed:g},fps={FPS},tpad=stop_mode=clone:stop=1,"
                    if speed != 1 else "")
     # Convert the source's display aspect to square pixels before fitting or cropping.
-    nodes.append(f"{vout}settb=1/{FPS},setpts=N,scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,"
-                 f"{framing},setsar=1,{zoom_filter}{video_speed}ass=filename=captions.ass:fontsdir=fonts,format=yuv420p[v]")
-    leveling = "acompressor=threshold=0.126:ratio=2:attack=15:release=150:makeup=1.25," if manifest.voice_leveling else ""
+    if not audio_pass:
+        nodes.append(f"{vout}settb=1/{FPS},setpts=N,scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,"
+                 f"{framing},setsar=1,{zoom_filter}{video_speed}{grade_filter(manifest.grade)}ass=filename=captions.ass:fontsdir=fonts,format=yuv420p[v]")
+    leveling = "acompressor=threshold=0.126:ratio=2:attack=15:release=150:makeup=1.25," if manifest.voice_leveling and manifest.voice is None else ""
     audio_speed = (f"atempo={speed:g},apad,atrim=end_sample={manifest.output_frames * (SAMPLE_RATE // FPS)},"
                    if speed != 1 else "")
-    nodes.append(f"{aout}{audio_speed}{leveling}alimiter=limit=0.95:level=0:attack=1,asetpts=N/SR/TB[a]")
+    voice = manifest.voice
+    base = [executable, "-hide_banner", "-nostdin", "-protocol_whitelist", "file", "-f", "mov",
+            "-enable_drefs", "0", "-copyts", "-start_at_zero", "-i", str(source)]
+    if audio_pass:
+        nodes.append(f"{aout}{audio_speed}{speech_filter(voice)}{loudnorm(voice, stats=True)}[a]")
+        return base + ["-v", "info", "-filter_complex", ";".join(nodes), "-map", "[a]", "-f", "null", "-"]
+    if voice and voice.enabled and (measured is None or measured.get("input_i") is not None):
+        length = manifest.output_frames * (SAMPLE_RATE // FPS)
+        enhancement = f"{speech_filter(voice)}{loudnorm(voice, measured)},aresample={SAMPLE_RATE},apad,atrim=end_sample={length},"
+    else:
+        enhancement = f"{leveling}alimiter=limit=0.95:level=0:attack=1,"
+    nodes.append(f"{aout}{audio_speed}{enhancement}asetpts=N/SR/TB[a]")
     preset, crf, audio_rate = ("medium", "17", "192k") if manifest.settings.quality == "high" else ("veryfast", "22", "160k")
     return [
         executable, "-hide_banner", "-nostdin", "-n", "-v", "error", "-nostats", "-progress", "pipe:1",
@@ -103,7 +141,7 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
         "-filter_complex", ";".join(nodes), "-map", "[v]", "-map", "[a]",
         "-t", f"{manifest.output_frames / FPS:.6f}", "-c:v", "libx264", "-threads:v", "4", "-preset", preset,
         "-crf", crf, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", audio_rate, "-ar", str(SAMPLE_RATE),
-        *(["-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709", "-color_range", "tv"] if hdr else []),
+        *(["-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709", "-color_range", "tv"] if hdr or managed else []),
         "-map_metadata", "-1", "-map_chapters", "-1", "-movflags", "+faststart", "preview.mp4",
     ]
 

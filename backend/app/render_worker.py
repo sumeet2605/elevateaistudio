@@ -8,6 +8,7 @@ from time import perf_counter
 from .captions import ass_asset, captions_for
 from .dynamic_captions import CaptionStyle, Cue, dynamic_ass, retime_cues, wrapping
 from .ffmpeg_render import HDR_TRANSFERS, ffmpeg_args, run_ffmpeg, streams
+from .finishing import loudness_pass, measure_audio
 from .render_manifest import FPS
 from .render_store import Renders, digest
 from .transcription import Transcript
@@ -86,8 +87,17 @@ def render_video(settings, jobs, job, stage):
         executable = shutil.which(settings.ffmpeg)
         if not executable:
             raise ValueError("FFmpeg with libass and libx264 is required to render.")
-        args = ffmpeg_args(str(Path(executable).resolve()), source, manifest, video["index"], audio["index"],
-                           color_transfer=video.get("color_transfer"))
+        executable = str(Path(executable).resolve())
+        measured = None
+        voice_seconds = None
+        if manifest.voice and manifest.voice.enabled:
+            started_voice = perf_counter()
+            stage("measuring_audio", .02)
+            measured = loudness_pass(ffmpeg_args(executable, source, manifest, video["index"], audio["index"],
+                                                 audio_pass=True), lambda: stage("measuring_audio", .02))
+            voice_seconds = perf_counter() - started_voice
+        args = ffmpeg_args(executable, source, manifest, video["index"], audio["index"],
+                           color_transfer=video.get("color_transfer"), color_info=video, measured=measured)
         run_ffmpeg(args, work, manifest.encoded_ms, lambda progress: stage("encoding_preview", progress))
         stage("verifying_preview", 0.99)
         preview = work / "preview.mp4"
@@ -99,14 +109,19 @@ def render_video(settings, jobs, job, stage):
                 verified_video["height"], verified_video["pix_fmt"]) != ("h264", "aac", 1080, 1920, "yuv420p"):
             raise ValueError("FFprobe found unexpected output codecs, dimensions, or pixel format.")
         hdr = video.get("color_transfer") in HDR_TRANSFERS
-        if hdr and any(verified_video.get(field) != "bt709"
+        if (hdr or manifest.grade_revision or manifest.voice_revision) and any(verified_video.get(field) != "bt709"
                        for field in ("color_transfer", "color_space", "color_primaries")):
-            raise ValueError("FFprobe could not confirm the HDR source was exported as BT.709 SDR.")
+            raise ValueError("FFprobe could not confirm the finished video is tagged BT.709 SDR.")
         if Fraction(verified_video["avg_frame_rate"]) != FPS:
             raise ValueError("FFprobe found an unexpected output frame rate.")
         if max(abs(actual - manifest.encoded_ms / 1000), abs(video_length - audio_length)) > 0.07:
             raise ValueError("The encoded duration or stream alignment exceeded the expected frame tolerance.")
+        output_audio = measure_audio(executable, preview, lambda: stage("verifying_preview", .99)) if manifest.voice_revision else None
+        if (manifest.voice and manifest.voice.enabled and output_audio and output_audio.get("input_tp") is not None
+                and output_audio["input_tp"] > manifest.voice.peak + .05):
+            raise ValueError("Encoded audio exceeded the requested true-peak ceiling. Lower the target loudness and render again.")
         metadata = {
+            "output_audio": output_audio, "audio_analysis_seconds": voice_seconds,
             "created_at": datetime.now(timezone.utc).isoformat(), "sha256": digest(preview),
             "width": 1080, "height": 1920, "video_codec": "h264", "audio_codec": "aac",
             "pixel_format": "yuv420p", "fps": FPS, "color_transfer": verified_video.get("color_transfer"), "duration_seconds": actual,

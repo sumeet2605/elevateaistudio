@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .brand import Brand
+from .finishing import Grade, Voice
 from .motion_models import CameraSettings, Focus, MotionEvent
 from .motion_store import rules
 from .timeline import Span, Timeline
@@ -87,6 +88,12 @@ class RenderManifest(BaseModel):
     face_track: list[tuple[int, Focus]] = Field(default_factory=list)
     display_geometry: tuple[int, int] | None = None
     face_version: UUID | None = None
+    grade: Grade | None = None
+    voice: Voice | None = None
+    grade_revision: UUID | None = None
+    voice_revision: UUID | None = None
+    grade_fingerprint: str | None = None
+    voice_fingerprint: str | None = None
     voice_leveling: bool
     notices: list[str]
 
@@ -171,6 +178,10 @@ class RenderManifest(BaseModel):
             identity = hashlib.sha256(f"{identity}:{self.caption_revision}:{self.caption_fingerprint}".encode()).hexdigest()
         if self.motion_revision:
             identity = hashlib.sha256(f"{identity}:{self.motion_revision}:{self.motion_fingerprint}".encode()).hexdigest()
+        for revision, fingerprint in ((self.grade_revision, self.grade_fingerprint),
+                                      (self.voice_revision, self.voice_fingerprint)):
+            if revision:
+                identity = hashlib.sha256(f"{identity}:{revision}:{fingerprint}".encode()).hexdigest()
         return identity
 
     @property

@@ -109,6 +109,9 @@ class DirectorStore:
         eligible = [cut.proposed.model_dump() for cut in silence.proposed_cuts
                     if cut.status == "pending" and cut.confidence == "high"]
         with self.projects.connect() as db:
+            has_finish = db.execute("SELECT 1 FROM sqlite_master WHERE name='finish_analyses'").fetchone()
+            finish_row = db.execute("SELECT payload FROM finish_analyses WHERE project_id=? ORDER BY rowid DESC LIMIT 1",
+                                    (str(project_id),)).fetchone() if has_finish else None
             has_motion = db.execute("SELECT 1 FROM sqlite_master WHERE name='motion_revisions'").fetchone()
             current = db.execute("""SELECT p.payload FROM director_current c JOIN director_plans p ON p.id=c.plan_id
                                    WHERE c.project_id=?""", (str(project_id),)).fetchone()
@@ -121,6 +124,8 @@ class DirectorStore:
                         if current_plan and current_plan["source_media_id"] == media["sha256"] else [])
         energetic = saved.get("settings", {}).get("energy") == "energetic"
         maximum, transition, style = rules(playbook_id, energetic)
+        measured = json.loads(finish_row[0]) if finish_row else {}
+        audio = measured.get("audio") or {}
         context = {
             "context_id": str(uuid4()), "duration_ms": duration,
             "media": {key: media.get(key) for key in ("width", "height", "video_codec", "audio_codec")},
@@ -133,6 +138,11 @@ class DirectorStore:
             "eligible_cuts": eligible, "minimum_cut_ms": silence.detection.minimum_removable_ms,
             "brand": brand["settings"], "playbook": playbook.model_dump(),
             "brand_revision": brand["id"], "playbook_revision": f"{playbook.id}@{playbook.revision}",
+            "finishing": {"evidence": "Sampled metadata only" if measured else "No visual or audio sample measurements",
+                          "video": {key: measured.get("video", {}).get(key) for key in
+                                    ("interpretation", "color_primaries", "color_transfer")},
+                          "near_black": measured.get("dark_fraction"), "near_white": measured.get("bright_fraction"),
+                          "audio": {key: audio.get("original", {}).get(key) for key in ("input_i", "input_tp", "input_lra")}},
             "camera_motion": {"maximum": maximum, "transition": transition, "guidance": style,
                               "target": min(maximum, brand["settings"]["max_zoom_percent"], playbook.motion_target),
                               "face_summary": face["summary"] if face else None, "other_approved_cuts": current_cuts,

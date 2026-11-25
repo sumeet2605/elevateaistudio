@@ -8,6 +8,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 
 from .director import DirectorPlan
+from .finish_store import initialize as initialize_finish, pinned as pinned_finish
 from .director_store import DirectorStore, reviewed_plan
 from .render_manifest import RenderManifest, RenderSettings, Zoom, frame_spans
 from .timeline import Span
@@ -29,6 +30,7 @@ class Renders:
     def initialize(self):
         MotionStore(self.jobs).initialize()
         with self.projects.connect() as db:
+            initialize_finish(db)
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS caption_revisions (
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
@@ -97,6 +99,7 @@ class Renders:
             issue = self.revision_issue(db, project_id, plan)
             caption = self.latest_caption(db, project_id, plan_id) if include_captions else None
             motion = MotionStore.latest(db, project_id, plan["id"]) if include_motion else None
+            finishing = pinned_finish(db, project_id, plan["id"])
         if issue:
             raise HTTPException(409, issue)
         try:
@@ -150,7 +153,7 @@ class Renders:
                 brand_revision=plan["brand_revision"], playbook_revision=plan["playbook_revision"],
                 brand=plan["brand"], settings=settings, source_duration_ms=plan["source_duration_ms"],
                 cuts=reviewed["approved_cuts"], retained=retained, frame_ranges=frame_spans(retained),
-                emphasis=highlights, **camera, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
+                emphasis=highlights, **camera, **finishing, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
                 notices=notices,
             )
         except ValidationError as error:
@@ -196,6 +199,13 @@ class Renders:
                 motion and hashlib.sha256(motion["payload"].encode()).hexdigest() != manifest.motion_fingerprint
             ):
                 return "Camera motion changed. Generate and approve a new preview."
+        finishing = pinned_finish(db, manifest.project_id, manifest.plan_id)
+        for kind in ("grade", "voice"):
+            revision = getattr(manifest, f"{kind}_revision")
+            if (str(revision) if revision else None) != finishing.get(f"{kind}_revision") or (
+                getattr(manifest, f"{kind}_fingerprint") != finishing.get(f"{kind}_fingerprint")
+            ):
+                return "Colour or sound changed. Generate and approve a new preview."
         issue = self.revision_issue(db, manifest.project_id, selected[1])
         if issue:
             return issue
