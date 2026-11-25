@@ -270,7 +270,14 @@ def mock_response(context):
             continue
         start = word["start_ms"]
         add("hook", start, end, "Review this recorded opening as a way into the message.", a, b)
-        add("emphasis", start, end, "Emphasize the recorded opening phrase for readability.", a, b)
+        filler = {"about", "from", "have", "that", "this", "what", "when", "where", "will", "with", "would", "your"}
+        meaningful = [i for i in range(a, b + 1)
+                      if len(token := words[i]["text"].strip(".,?!।:;").casefold()) >= 4 and token not in filler]
+        if meaningful:
+            first = meaningful[0]
+            last = first + 1 if first + 1 in meaningful else first
+            add("emphasis", words[first]["start_ms"], words[last]["end_ms"],
+                "Highlight a short phrase so the key words stand out.", first, last)
         if context["brand"]["max_zoom_percent"] > 100 and context["playbook"]["max_zooms_per_minute"]:
             add("zoom", start, end, "Use one subtle push-in on the opening.", zoom=min(105, context["brand"]["max_zoom_percent"]))
         add("b_roll", start, end, "Consider an illustration if it supports the spoken example.",

@@ -9,3 +9,5 @@
 | Day 5 (implemented) | Styled ASS captions, vertical FFmpeg previews, approval, and final MP4 download | Spoken-fixture render, source checksums, frame/audio markers, Chrome playback, and stale approval gate |
 
 Scheduling depends on local model setup, test footage, and review feedback. Rubrics for cut quality and caption legibility should be exercised with real brand footage as each feature lands.
+
+Day 6 uses the [coaching reel quality pilot rubric](docs/quality-pilot.md) to validate uncaptioned recordings and compare render performance.

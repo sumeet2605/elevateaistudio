@@ -195,3 +195,13 @@ def test_mock_hook_preserves_sentence_boundary():
     _, operations, _ = validate_recommendation(mock_response(data), data)
     assert operations[0]["quote"] == "Take a breath."
     assert operations[0]["end_ms"] == 2200
+
+
+def test_mock_emphasizes_key_words_instead_of_entire_hook():
+    data = context()
+    words = ["What", "if", "the", "same", "problem", "is", "repeating?"]
+    data["words"] = [{"text": word, "start_ms": 1400 + 200*i, "end_ms": 1570 + 200*i}
+                     for i, word in enumerate(words)]
+    _, decisions, _ = validate_recommendation(mock_response(data), data)
+    assert next(op["quote"] for op in decisions if op["kind"] == "hook") == "What if the same problem is repeating?"
+    assert next(op["quote"] for op in decisions if op["kind"] == "emphasis") == "same problem"

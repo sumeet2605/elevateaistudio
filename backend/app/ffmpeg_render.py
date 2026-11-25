@@ -13,7 +13,7 @@ def streams(executable, path):
         output = subprocess.run([
             executable, "-v", "error", "-protocol_whitelist", "file",
             "-show_entries",
-            "format=duration,size:stream=index,codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,duration,start_time,sample_rate:stream_disposition=attached_pic",
+            "format=duration,size:stream=index,codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,duration,start_time,sample_rate,color_transfer,color_space,color_primaries:stream_disposition=attached_pic",
             "-of", "json", str(path),
         ], capture_output=True, check=True, timeout=30)
         payload = json.loads(output.stdout)
@@ -24,16 +24,24 @@ def streams(executable, path):
         raise AudioError("Could not inspect the video and audio streams with FFprobe.") from error
 
 
-def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index: int, audio_index: int):
+HDR_TRANSFERS = frozenset({"arib-std-b67", "smpte2084"})
+
+
+def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index: int, audio_index: int, *,
+                color_transfer: str | None = None):
     if type(video_index) is not int or type(audio_index) is not int or min(video_index, audio_index) < 0:
         raise ValueError("Invalid source stream indices.")
     count = len(manifest.frame_ranges)
     colour = "0x" + manifest.brand.background[1:].upper()
-    framing = (
-        "scale=1080:1920:force_original_aspect_ratio=increase:force_divisible_by=2,crop=1080:1920"
-        if manifest.settings.framing == "crop" else
-        f"scale=1080:1920:force_original_aspect_ratio=decrease:force_divisible_by=2,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color={colour}"
-    )
+    crop = manifest.settings.framing == "crop"
+    scale = ("scale=1080:1920:force_original_aspect_ratio="
+             + ("increase" if crop else "decrease") + ":force_divisible_by=2")
+    frame = ("crop=1080:1920" if crop else
+             f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color={colour}")
+    hdr = color_transfer in HDR_TRANSFERS
+    tone = ("zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,"
+            "tonemap=hable:desat=2,zscale=t=bt709:m=bt709:r=tv,format=yuv420p," if hdr else "")
+    framing = f"{scale},{tone}{frame}"
     vprefix = (f"[0:{video_index}]fps={FPS}:start_time=0,"
                f"tpad=stop_mode=clone:stop_duration={manifest.source_duration_ms / 1000:.3f}")
     aprefix = f"[0:{audio_index}]aresample={SAMPLE_RATE}:async=1:first_pts=0,apad"
@@ -86,6 +94,7 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
         "-filter_complex", ";".join(nodes), "-map", "[v]", "-map", "[a]",
         "-t", f"{manifest.total_frames / FPS:.6f}", "-c:v", "libx264", "-threads:v", "4", "-preset", preset,
         "-crf", crf, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", audio_rate, "-ar", str(SAMPLE_RATE),
+        *(["-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709", "-color_range", "tv"] if hdr else []),
         "-map_metadata", "-1", "-map_chapters", "-1", "-movflags", "+faststart", "preview.mp4",
     ]
 
@@ -115,6 +124,8 @@ def run_ffmpeg(args, directory: Path, duration_ms: int, report):
                                 progress = max(progress, min(0.99, int(value) / (duration_ms * 1000)))
                 if process.wait():
                     message = log.read_text(encoding="utf-8", errors="replace").strip()[-600:]
+                    if "No such filter: 'zscale'" in message:
+                        raise AudioError("HDR footage requires an FFmpeg build with the zscale filter (libzimg).")
                     raise AudioError("FFmpeg rendering failed. " + message)
             except BaseException:
                 if process.poll() is None:

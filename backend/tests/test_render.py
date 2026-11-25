@@ -293,3 +293,16 @@ def test_audio_and_video_markers_together_after_cut(tmp_path):
         ], capture_output=True, check=True)
         return np.frombuffer(result.stdout, dtype="u1").mean()
     assert centre_at(1.55) < 20 and centre_at(1.65) > 220
+
+
+def test_hdr_tone_map_is_applied_before_captions_and_tagged_sdr():
+    manifest = manifest_for()
+    source = Path("source.mov")
+    for transfer in ("arib-std-b67", "smpte2084"):
+        command = ffmpeg_args("ffmpeg", source, manifest, 0, 1, color_transfer=transfer)
+        graph = command[command.index("-filter_complex") + 1]
+        assert graph.index("tonemap=hable") < graph.index("ass=filename")
+        assert command[command.index("-color_trc") + 1] == "bt709"
+        assert command[command.index("-color_primaries") + 1] == "bt709"
+    normal = ffmpeg_args("ffmpeg", source, manifest, 0, 1, color_transfer="bt709")
+    assert all("tonemap" not in arg for arg in normal)

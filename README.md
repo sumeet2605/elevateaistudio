@@ -95,13 +95,17 @@ The input estimate is approximate and includes the instructions, request metadat
 2. Open **Render**, check the selected plan and choose **Generate Preview**. Standard uses x264 veryfast with CRF 22 and AAC at 160 kbps. High uses x264 medium with CRF 17 and AAC at 192 kbps. Fit preserves the entire source frame on the brand background. Crop fills the portrait frame with a centred crop.
 3. Play the preview and inspect the cuts and caption style. Choose **Approve preview** to enable **Download Final MP4**, or **Reject preview** and refine the plan. A later revision of the plan, brand, transcript, or source makes the prior approval stale. Older previews remain in render history.
 
-The worker requires FFmpeg with the `ass` filter (libass), `libx264`, and AAC, plus FFprobe. Run `ffmpeg -filters` to check for `ass` and `ffmpeg -encoders` to check for `libx264`. Output is 1080 × 1920 at 30 fps, H.264 with yuv420p, and AAC at 48 kHz. The caption engine uses bundled Noto Sans Bold and Noto Sans Devanagari Bold, including when the brand requests a different font. It uses the pinned brand's colours, alignment, and caption style. The lower placement includes room for social-video interface controls.
+The worker requires FFmpeg with the `ass` filter (libass), `libx264`, and AAC, plus FFprobe. Run `ffmpeg -filters` to check for `ass` and `ffmpeg -encoders` to check for `libx264`. Tagged HLG or PQ footage requires the FFmpeg `zscale` filter for tone mapping to BT.709 SDR before captions. Output is 1080 × 1920 at 30 fps, H.264 with yuv420p, and AAC at 48 kHz. The caption engine uses bundled Noto Sans Bold and Noto Sans Devanagari Bold, including when the brand requests a different font. It uses the pinned brand's colours, alignment, and caption style. The lower placement includes room for social-video interface controls.
 
 Captions are grouped from recorded words, recalculated on the frame-aligned edited timeline, and burned in. The settings let you change maximum words, pause separation, and preferred minimum cue duration. Words intersecting a cut seam and untimed segments crossing a seam are omitted. A complete segment with no word timings can appear as one cue. Retained boundaries round inward to the 30 fps frame grid. ASS times have 10 ms precision. A source frame can contribute pixels to a nearby grid frame when the source has a different frame rate.
 
 Day 5 applies brief audio fades at cut seams and a peak limiter. The voice-leveling brand option adds light compression. The renderer supports up to 80 retained ranges and uses a first audio stream. It previews and exports the same immutable file, with no automatic music or B-roll insertion. Use an uncaptioned source when possible. Existing captions burned into the source pixels remain visible and can overlap the new captions.
 
 The 20.734-second coaching fixture produced an 18.634-second approved sample with two cuts and four caption cues. The Standard preview took 20.281 s in the Chrome workflow and 1.597 s in an isolated worker run on the Apple M3 Pro. A separate local 74.3-second portrait recording took 475.556 s with the High preset. Its stream durations matched, and its measured decoded audio peak was −3.8 dBFS. These are observed wall-clock measurements for two different clips and presets.
+
+## Quality pilot
+
+Use the [coaching reel quality pilot](docs/quality-pilot.md) to record revision IDs, measured processing time, manual correction time, and the human quality scorecard.
 
 ## Checks
 

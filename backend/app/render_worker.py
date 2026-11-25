@@ -6,7 +6,7 @@ from pathlib import Path
 from time import perf_counter
 
 from .captions import ass_asset, captions_for
-from .ffmpeg_render import ffmpeg_args, run_ffmpeg, streams
+from .ffmpeg_render import HDR_TRANSFERS, ffmpeg_args, run_ffmpeg, streams
 from .render_manifest import FPS
 from .render_store import Renders, digest
 from .transcription import Transcript
@@ -52,7 +52,8 @@ def render_video(settings, jobs, job, stage):
         executable = shutil.which(settings.ffmpeg)
         if not executable:
             raise ValueError("FFmpeg with libass and libx264 is required to render.")
-        args = ffmpeg_args(str(Path(executable).resolve()), source, manifest, video["index"], audio["index"])
+        args = ffmpeg_args(str(Path(executable).resolve()), source, manifest, video["index"], audio["index"],
+                           color_transfer=video.get("color_transfer"))
         run_ffmpeg(args, work, manifest.encoded_ms, lambda progress: stage("encoding_preview", progress))
         stage("verifying_preview", 0.99)
         preview = work / "preview.mp4"
@@ -63,6 +64,10 @@ def render_video(settings, jobs, job, stage):
         if (verified_video["codec_name"], verified_audio["codec_name"], verified_video["width"],
                 verified_video["height"], verified_video["pix_fmt"]) != ("h264", "aac", 1080, 1920, "yuv420p"):
             raise ValueError("FFprobe found unexpected output codecs, dimensions, or pixel format.")
+        hdr = video.get("color_transfer") in HDR_TRANSFERS
+        if hdr and any(verified_video.get(field) != "bt709"
+                       for field in ("color_transfer", "color_space", "color_primaries")):
+            raise ValueError("FFprobe could not confirm the HDR source was exported as BT.709 SDR.")
         if Fraction(verified_video["avg_frame_rate"]) != FPS:
             raise ValueError("FFprobe found an unexpected output frame rate.")
         if max(abs(actual - manifest.encoded_ms / 1000), abs(video_length - audio_length)) > 0.07:
@@ -70,7 +75,7 @@ def render_video(settings, jobs, job, stage):
         metadata = {
             "created_at": datetime.now(timezone.utc).isoformat(), "sha256": digest(preview),
             "width": 1080, "height": 1920, "video_codec": "h264", "audio_codec": "aac",
-            "pixel_format": "yuv420p", "fps": FPS, "duration_seconds": actual,
+            "pixel_format": "yuv420p", "fps": FPS, "color_transfer": verified_video.get("color_transfer"), "duration_seconds": actual,
             "video_seconds": video_length, "audio_seconds": audio_length, "size_bytes": preview.stat().st_size,
             "render_seconds": round(perf_counter() - started, 3), "caption_count": len(cues),
             "omitted_words": omitted,
