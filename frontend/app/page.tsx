@@ -5,6 +5,10 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { api, request } from "./api";
 import Transcription from "./transcription";
+import SilenceDetection from "./silence";
+
+const tabs = ["source", "transcription", "silence"] as const;
+type Tab = typeof tabs[number];
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
 function displaySize(bytes: number) {
@@ -35,8 +39,9 @@ export default function Studio() {
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState("");
   const [previewError, setPreviewError] = useState(false);
-  const [tab, setTab] = useState<"source" | "transcription">("source");
+  const [tab, setTab] = useState<Tab>("source");
   const [videoReady, setVideoReady] = useState(false);
+  const [position, setPosition] = useState(0);
   const video = useRef<HTMLVideoElement>(null);
   const active = projects.find(({ id }) => id === activeId);
   const media = active?.media;
@@ -51,7 +56,8 @@ export default function Studio() {
       setHealth(status);
       const savedId = sessionStorage.getItem("elevate-project");
       setActiveId(items.find(({ id }) => id === savedId)?.id ?? items[0]?.id ?? null);
-      if (sessionStorage.getItem("elevate-tab") === "transcription") setTab("transcription");
+      const savedTab = tabs.find((candidate) => candidate === sessionStorage.getItem("elevate-tab"));
+      if (savedTab) setTab(savedTab);
       setReady(true);
     } catch (problem) {
       setError((problem as Error).message);
@@ -63,9 +69,13 @@ export default function Studio() {
     if (activeId) sessionStorage.setItem("elevate-project", activeId);
   }, [activeId]);
 
-  function selectTab(next: "source" | "transcription") {
+  function selectTab(next: Tab) {
     setTab(next);
     sessionStorage.setItem("elevate-tab", next);
+  }
+
+  function seek(seconds: number) {
+    if (video.current) video.current.currentTime = seconds;
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -130,7 +140,7 @@ export default function Studio() {
               aria-current={activeId === project.id ? "page" : undefined}
               onClick={() => {
                 if (activeId === project.id) return;
-                setActiveId(project.id); setError(""); setPreviewError(false); setVideoReady(false);
+                setActiveId(project.id); setError(""); setPreviewError(false); setVideoReady(false); setPosition(0);
               }}>
               <Film size={15}/><span>{project.title}</span>{project.media && <Check size={14}/>}
             </button>
@@ -159,7 +169,8 @@ export default function Studio() {
             onKeyDown={(event) => {
               if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
               event.preventDefault();
-              const next = tab === "source" ? "transcription" : "source";
+              const step = event.key === "ArrowLeft" ? -1 : 1;
+              const next = tabs[(tabs.indexOf(tab) + step + tabs.length) % tabs.length];
               selectTab(next);
               document.getElementById(`${next}-tab`)?.focus();
             }}>
@@ -167,8 +178,10 @@ export default function Studio() {
               tabIndex={tab === "source" ? 0 : -1} onClick={() => selectTab("source")}>Original</button>
             <button id="transcription-tab" role="tab" aria-selected={tab === "transcription"} aria-controls="transcription-panel"
               tabIndex={tab === "transcription" ? 0 : -1} onClick={() => selectTab("transcription")}>Transcription</button>
+            <button id="silence-tab" role="tab" aria-selected={tab === "silence"} aria-controls="silence-panel"
+              tabIndex={tab === "silence" ? 0 : -1} onClick={() => selectTab("silence")}>Silence Detection</button>
           </div>}
-          <div className={media && tab === "transcription" ? "review-grid" : undefined}>
+          <div className={media && tab !== "source" ? "review-grid" : undefined}>
           <section className="panel source" id="source-panel"
             role={media && tab === "source" ? "tabpanel" : undefined}
             aria-labelledby={media && tab === "source" ? "source-tab" : undefined}>
@@ -178,6 +191,7 @@ export default function Studio() {
             {media ? <>
               <video ref={video} key={mediaEndpoint} src={api + mediaEndpoint} controls preload="metadata"
                 onLoadedMetadata={() => setVideoReady(true)}
+                onTimeUpdate={(event) => setPosition(event.currentTarget.currentTime)}
                 onError={() => { setPreviewError(true); setVideoReady(false); }} />
               {previewError && <p className="muted small">Your browser could not preview this codec. <a href={api + mediaEndpoint}>Open original</a></p>}
               <div className="media-info"><strong>{media.filename}</strong><span className="muted">{media.width} × {media.height} · {number.format(media.duration_seconds)} s · {media.video_codec.toUpperCase()} · {displaySize(media.size_bytes)}</span></div>
@@ -201,7 +215,9 @@ export default function Studio() {
           </section>
           {media && active && tab === "transcription" && <Transcription key={active.id} projectId={active.id}
             hasAudio={!!media.audio_codec} videoReady={videoReady}
-            seek={(seconds) => { if (video.current) video.current.currentTime = seconds; }} />}
+            seek={seek} />}
+          {media && active && tab === "silence" && <SilenceDetection key={active.id} projectId={active.id}
+            hasAudio={!!media.audio_codec} ready={videoReady} position={position} seek={seek} />}
           </div>
         </main>
       </div>

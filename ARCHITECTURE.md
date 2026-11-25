@@ -12,6 +12,9 @@
 | `backend/app/audio.py` | Extract the first audio stream into timeline-aligned PCM |
 | `backend/app/jobs.py` and `worker.py` | Durable SQLite queue and single local worker |
 | `backend/app/transcription.py` and `transcription_api.py` | Inference adapter, schema validation, and project-scoped endpoints |
+| `backend/app/audio_analysis.py` and `analysis_worker.py` | Aligned PCM measurements, FFmpeg silence, Silero speech evidence, and background analysis |
+| `backend/app/silence.py` and `timeline.py` | Detection presets, candidate validation, versioned plans, and bidirectional time mapping |
+| `backend/app/analysis_store.py` and `analysis_api.py` | Analysis configuration, cache, review transactions, plan history, and JSON export |
 | `backend/tests/` | API and media integration checks with synthetic fixtures |
 | `data/` | Ignored runtime database and project files |
 | `.github/workflows/` | Pull request and push checks |
@@ -30,12 +33,20 @@ FFmpeg extracts the first audio stream as 16 kHz mono PCM into a per-attempt WAV
 
 The version 1 transcript schema carries the project UUID, source SHA-256, model, detected language and confidence, source duration, transcript text, segments, words, and creation time. It validates ordered source-relative seconds and bounds every word inside its segment. The worker reconciles small model boundary overlaps before validation. It writes and flushes a staged JSON file, then renames it as part of the SQLite publish operation. The API serves the artifact only after the database commit. Each successful attempt preserves a distinct transcript version. The browser polls while a job is active and seeks the existing video element directly when a timestamp is selected.
 
+## Day 3 analysis and review
+
+The durable queue now dispatches transcription and audio analysis. The partial unique index permits one active job of each type per project. Analysis snapshots the saved settings and the latest available transcript at enqueue time. Retry uses the same snapshot. The existing worker remains responsible for progress, cancellation, and interruption recovery. Measurement reports the fraction of PCM frames read. FFmpeg silence detection and VAD report their actual processing stage.
+
+The worker aligns the PCM to source time, measures it, runs FFmpeg amplitude detection, and unions Silero speech ranges across channels. It then protects detected speech and transcript words with an extra 50 ms guard and considers only the remaining gaps. Low-amplitude gaps checked against an available transcript can be high confidence. Other eligible gaps stay ambiguous. Settings enforce minimum pause, padding, and removable duration. Manual adjustments stay within the candidate and keep the minimum removable duration.
+
+Evidence includes up to 600 waveform buckets and the quiet and speech intervals. The worker flushes a staged JSON artifact and renames it before the SQLite transaction publishes the plan. The evidence cache keys off source SHA-256, algorithm version, threshold, minimum silence, and noise adaptation. Changing padding or adding a transcript can reuse the evidence. Regeneration creates a new pending plan while retaining prior reviewed plans. Review decisions and approved cuts are written in one SQLite transaction.
+
+The editing plan uses integer milliseconds and half-open ranges. Source timestamps inside removed ranges map to null. The source endpoint maps to edited duration. At an internal edited seam, the reverse mapping chooses the next retained source range. The edited endpoint maps to the end of the final retained source range. The approved cut union determines retained spans and estimated duration. The original and transcript use their existing immutable storage.
+
 ## Planned Phase 1 components
 
 | Component | Responsibility |
 | --- | --- |
-| Audio analysis | Report measurements such as loudness and peaks |
-| Silence detection | Propose configurable reductions with pause padding and human review |
 | Brand configuration | Load versioned caption, voice, zoom, transition, and export settings |
 | Editing playbooks | Supply modular guidance for talking-head reels and future formats |
 | AI director | Use transcript, silence candidates, metadata, brand, and playbook to propose a typed plan through OpenAI Structured Outputs |

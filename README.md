@@ -1,6 +1,6 @@
 # Elevate AI Studio
 
-A local video workspace for Elevate with Sumeet. Create a project, upload original footage, and run local speech transcription with word and segment timestamps.
+A local video workspace for Elevate with Sumeet. Create a project, upload original footage, and run local speech transcription with word and segment timestamps. Review silence suggestions on a waveform and export a non-destructive editing plan.
 
 ## Local setup
 
@@ -66,6 +66,19 @@ The first use downloads the selected multilingual model into `data/models` by de
 
 The defaults are `small`, `cpu`, `int8`, four CPU threads, beam size five, and voice activity detection. CTranslate2 confirmed CPU INT8 support on the Apple M3 Pro used for testing. See `.env.example` for configurable settings. CUDA needs a compatible NVIDIA environment. No network service receives the uploaded audio. The worker can use an existing local converted model path via `ELEVATE_WHISPER_MODEL`. Keep the model multilingual for Hindi and mixed speech.
 
+## Review silence
+
+1. Upload footage with audio. Use **Transcription** first to include word boundaries in the analysis.
+2. Open **Silence Detection** and choose **Analyse Audio**. Click the waveform or a suggestion timestamp to seek the original.
+3. Accept, reject, or adjust each cut. **Accept high confidence** approves pending suggestions where low amplitude, VAD, and the transcript agree. Listen to ambiguous audio before reviewing it.
+4. Export the current editing plan as JSON. The estimated duration subtracts only accepted or modified cuts. No media is edited during this workflow.
+
+Gentle is the default for coaching footage. It uses a minimum pause of 1.2 seconds and 300 ms of padding on each side. Balanced uses 0.8 seconds and 200 ms, and Fast-paced uses 0.5 seconds and 150 ms. All presets start at −35 dBFS and require at least 200 ms of removable audio. You can save custom settings and regenerate a new plan. Prior plans and their decisions are available through **Plan version** and can still be exported.
+
+Peak and RMS are reported in dBFS relative to full-scale digital amplitude. The estimated noise floor is the 20th percentile of 50 ms RMS windows, using the loudest channel in each window. The measurement floor is −120 dBFS. The clipping count measures samples at either full-scale PCM value after extraction and resampling. The optional noise-floor adjustment can raise the amplitude threshold by up to 10 dB, with an adaptation ceiling of −25 dBFS. Known speech remains protected even when the threshold rises. Waveform bars show peak magnitude in each time bucket.
+
+The worker analyses the first audio stream, preserves channel count for measurements, and checks VAD on each channel. This protects speech that appears on only one side of a stereo recording. It stops evaluating candidates at the end of the available audio, even when the video continues. VAD and transcription can miss speech or mistake other sounds for speech. Listen before approving cuts, especially with music, crosstalk, or soft voices.
+
 ## Checks
 
 ```sh
@@ -83,6 +96,8 @@ ELEVATE_REAL_TRANSCRIPTION=1 .venv/bin/python -m pytest -q -s backend/tests/test
 ```
 
 With Python 3.14.5 and Faster-Whisper 1.2.1 on an Apple M3 Pro with 18 GiB RAM, the 13.33-second spoken fixture produced two segments and 31 timestamped words. A fresh model load from the local cache, WAV extraction, inference, and persistence took 4.35 s. A second job reusing the loaded model took 2.72 s. These wall times exclude the initial model download. The fixture uses synthesized English speech. Separate Hindi and Hinglish smoke samples were detected as Hindi and returned Devanagari, with spelling errors and English terms sometimes rendered phonetically. The language confidence is for the detected language, independent of word accuracy. Review transcripts before using them to drive edits.
+
+The Day 3 end-to-end test uses a 20.734-second synthesized speech fixture and real FFmpeg, Faster-Whisper, and Silero VAD. On the Apple M3 Pro, a fresh analysis took 0.097 s and cached regeneration took 0.003 s after transcription. Gentle found four candidates totaling 5.404 s. Bulk approval of those four produced a 15.330 s plan. The original's SHA-256 matched before and after analysis and review.
 
 The GitHub Actions workflow runs the backend and frontend checks once the repository is pushed to GitHub.
 

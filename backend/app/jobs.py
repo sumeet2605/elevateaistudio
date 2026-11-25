@@ -45,18 +45,18 @@ class Jobs:
         job["cancellation_requested"] = bool(job["cancellation_requested"])
         return job
 
-    def latest(self, db, project_id: UUID):
+    def latest(self, db, project_id: UUID, kind="transcription"):
         return db.execute(
-            "SELECT * FROM jobs WHERE project_id=? ORDER BY rowid DESC LIMIT 1",
-            (str(project_id),),
+            "SELECT * FROM jobs WHERE project_id=? AND type=? ORDER BY rowid DESC LIMIT 1",
+            (str(project_id), kind),
         ).fetchone()
 
-    def get(self, project_id: UUID, job_id: UUID):
+    def get(self, project_id: UUID, job_id: UUID, kind="transcription"):
         with self.projects.connect() as db:
-            job = db.execute("SELECT * FROM jobs WHERE project_id=? AND id=?",
-                             (str(project_id), str(job_id))).fetchone()
+            job = db.execute("SELECT * FROM jobs WHERE project_id=? AND id=? AND type=?",
+                             (str(project_id), str(job_id), kind)).fetchone()
         if job is None:
-            raise HTTPException(404, "Transcription job not found.")
+            raise HTTPException(404, f"{kind.capitalize()} job not found.")
         return self.public(job)
 
     def state(self, project_id: UUID):
@@ -72,31 +72,33 @@ class Jobs:
                 "transcript_job_id": artifact["job_id"] if artifact else None,
             }
 
-    def enqueue(self, project_id: UUID, retry: UUID | None = None):
+    def enqueue(self, project_id: UUID, retry: UUID | None = None, *, kind="transcription", prepare=None):
         media = self.projects.get(project_id)["media"]
         if not media:
-            raise HTTPException(409, "Upload an original before generating a transcript.")
+            raise HTTPException(409, "Upload an original before starting this job.")
         if not media["audio_codec"]:
             raise HTTPException(422, "The original video has no audio track.")
         job_id = uuid4()
         with self.projects.connect() as db:
             db.execute("BEGIN IMMEDIATE")
-            latest = self.latest(db, project_id)
+            latest = self.latest(db, project_id, kind)
             if latest and latest["status"] in ("queued", "running"):
-                raise HTTPException(409, "A transcription job is already active for this project.")
+                raise HTTPException(409, f"A {kind} job is already active for this project.")
             retries = 0
             if retry:
                 if not latest or latest["id"] != str(retry) or latest["status"] not in ("failed", "interrupted"):
                     raise HTTPException(409, "Only the latest failed or interrupted job can be retried.")
                 retries = latest["retry_count"] + 1
             db.execute(
-                "INSERT INTO jobs (id, project_id, status, stage, retry_count) VALUES (?, ?, 'queued', 'queued', ?)",
-                (str(job_id), str(project_id), retries),
+                "INSERT INTO jobs (id, project_id, type, status, stage, retry_count) VALUES (?, ?, ?, 'queued', 'queued', ?)",
+                (str(job_id), str(project_id), kind, retries),
             )
-        return self.get(project_id, job_id)
+            if prepare:
+                prepare(db, job_id)
+        return self.get(project_id, job_id, kind)
 
-    def cancel(self, project_id: UUID, job_id: UUID):
-        self.get(project_id, job_id)
+    def cancel(self, project_id: UUID, job_id: UUID, kind="transcription"):
+        self.get(project_id, job_id, kind)
         with self.projects.connect() as db:
             changed = db.execute(f"""
                 UPDATE jobs SET cancellation_requested=1,
@@ -106,8 +108,8 @@ class Jobs:
                 WHERE id=? AND status IN ('queued','running')
             """, (str(job_id),))
             if changed.rowcount != 1:
-                raise HTTPException(409, "Only an active transcription can be cancelled.")
-        return self.get(project_id, job_id)
+                raise HTTPException(409, f"Only an active {kind} job can be cancelled.")
+        return self.get(project_id, job_id, kind)
 
     def recover(self):
         with self.projects.connect() as db:
@@ -115,7 +117,7 @@ class Jobs:
                 UPDATE jobs SET
                     status=CASE WHEN cancellation_requested THEN 'cancelled' ELSE 'interrupted' END,
                     stage=CASE WHEN cancellation_requested THEN 'cancelled' ELSE 'interrupted' END,
-                    error=CASE WHEN cancellation_requested THEN NULL ELSE 'The transcription worker stopped before finishing.' END,
+                    error=CASE WHEN cancellation_requested THEN NULL ELSE 'The local worker stopped before finishing.' END,
                     completed_at={NOW}
                 WHERE status='running'
             """)
@@ -147,7 +149,7 @@ class Jobs:
                 WHERE id=? AND status='running'
             """, (status, status, error, job_id))
 
-    def publish(self, job_id: str, transcript, commit_artifact):
+    def complete(self, job_id: str, publish):
         with self.projects.connect() as db:
             updated = db.execute(f"""
                 UPDATE jobs SET status='completed', stage='completed', progress=1, completed_at={NOW}
@@ -155,12 +157,18 @@ class Jobs:
             """, (job_id,))
             if updated.rowcount != 1:
                 raise Cancelled
+            publish(db)
+
+    def publish(self, job_id: str, transcript, commit_artifact):
+        def publish(db):
             db.execute("INSERT INTO transcripts VALUES (?, ?, ?, ?, ?, ?, ?, ?)", (
                 job_id, str(transcript.project_id), transcript.source_media_id, transcript.model,
                 transcript.language, transcript.source_duration, transcript.schema_version,
                 transcript.created_at.isoformat(),
             ))
             commit_artifact()
+
+        self.complete(job_id, publish)
 
 
 class Cancelled(Exception):

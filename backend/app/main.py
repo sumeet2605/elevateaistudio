@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from .analysis_api import analysis_routes
+from .analysis_store import AnalysisStore
 from .config import Settings
 from .jobs import Jobs
 from .media import ingest
@@ -20,11 +22,13 @@ def create_app(settings: Settings | None = None):
     settings = settings or Settings.from_env()
     projects = Projects(settings.data_dir)
     jobs = Jobs(projects)
+    analyses = AnalysisStore(jobs)
 
     @asynccontextmanager
     async def lifespan(_app):
         projects.initialize()
         jobs.initialize()
+        analyses.initialize()
         yield
 
     app = FastAPI(title="Elevate AI Studio", lifespan=lifespan)
@@ -100,6 +104,7 @@ def create_app(settings: Settings | None = None):
         )
 
     app.include_router(transcription_routes(projects, jobs))
+    app.include_router(analysis_routes(analyses))
     return app
 
 

@@ -6,6 +6,8 @@ import threading
 from datetime import datetime, timezone
 from uuid import UUID
 
+from .analysis_store import ANALYSIS, AnalysisStore
+from .analysis_worker import analyse
 from .audio import AudioError, extract_audio
 from .config import Settings
 from .jobs import Cancelled, Jobs
@@ -42,6 +44,9 @@ class Worker:
 
         published = False
         try:
+            if job["type"] == ANALYSIS:
+                analyse(self.settings, self.jobs, job, stage)
+                return
             project = projects.get(project_id)
             media = project["media"]
             source = projects.source_path(project_id, media)
@@ -75,9 +80,9 @@ class Worker:
         except Cancelled:
             self.jobs.finish(job_id, "cancelled")
         except WorkerStopped:
-            self.jobs.finish(job_id, "interrupted", "The transcription worker stopped before finishing.")
+            self.jobs.finish(job_id, "interrupted", "The local worker stopped before finishing.")
         except Exception as exc:
-            logger.exception("Transcription job %s failed", job_id)
+            logger.exception("%s job %s failed", job["type"], job_id)
             if isinstance(exc, (AudioError, FileNotFoundError, ImportError, ValueError)):
                 detail = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
             else:
@@ -112,11 +117,12 @@ def main():
     projects.initialize()
     jobs = Jobs(projects)
     jobs.initialize()
+    AnalysisStore(jobs).initialize()
     engine = FasterWhisper(TranscriptionSettings.from_env(settings.data_dir))
     worker = Worker(settings, jobs, engine)
     for event in (signal.SIGTERM, signal.SIGINT):
         signal.signal(event, lambda *_: worker.stop.set())
-    logger.info("Transcription worker ready for %s (%s, %s, %s)", settings.data_dir,
+    logger.info("Local worker ready for %s (%s, %s, %s)", settings.data_dir,
                 engine.settings.model, engine.settings.device, engine.settings.compute_type)
     worker.run()
 
