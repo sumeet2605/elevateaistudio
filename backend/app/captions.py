@@ -80,7 +80,8 @@ def captions_for(manifest: RenderManifest, transcript: Transcript):
                             abs(width(" ".join(w.text for w in words[:i])) - width(" ".join(w.text for w in words[i:]))))
                 lines = [words[:split], words[split:]]
             # ASS stores centiseconds. Floor both times to preserve non-overlap.
-            cues.append(Caption(begin // 10 * 10, stop // 10 * 10, lines))
+            speed = style.playback_speed
+            cues.append(Caption(int(begin / speed) // 10 * 10, int(stop / speed) // 10 * 10, lines))
         offset += keep.duration
     omitted += sum(len(item[2]) for index, item in enumerate(atoms) if index not in used)
     return cues, omitted

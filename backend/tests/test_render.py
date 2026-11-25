@@ -239,14 +239,15 @@ def test_running_render_cancellation_leaves_no_output(studio, monkeypatch):
     assert not list(settings.data_dir.glob("projects/*/renders/*"))
 
 
-def test_accepted_zoom_renders_on_the_edited_clock(studio, monkeypatch):
+@pytest.mark.parametrize("speed", [1.0, 1.1])
+def test_accepted_zoom_renders_on_the_edited_clock(studio, monkeypatch, speed):
     client, _, jobs = studio
     root, worker, payload = prepared(studio, monkeypatch)
     current = f"{root}/director/revisions/{payload['plan_id']}"
     plan = client.get(current).json()
     zoom = next(i for i, op in enumerate(plan["operations"]) if op["kind"] == "zoom")
     new = client.post(f"{current}/operations/{zoom}", json={"status": "accepted"}).json()
-    response = client.post(root + "/render", json={**payload, "plan_id": new["id"]})
+    response = client.post(root + "/render", json={**payload, "plan_id": new["id"], "settings": {"playback_speed": speed}})
     assert response.status_code == 202, response.text
     manifest = Renders(jobs).manifest(response.json()["id"])
     (start, end, percent), = manifest.edited_zooms()
@@ -260,6 +261,15 @@ def test_accepted_zoom_renders_on_the_edited_clock(studio, monkeypatch):
     result = client.get(root + "/render").json()
     assert result["job"]["status"] == "completed", result["job"]["error"]
     assert result["history"][0]["manifest"]["zooms"][0]["percent"] == percent
+    metadata = result["history"][0]["metadata"]
+    assert abs(metadata["duration_seconds"] - manifest.total_frames / 30 / speed) < 0.05
+    assert abs(metadata["video_seconds"] - metadata["audio_seconds"]) < 0.05
+    if speed != 1:
+        assert "atempo=1.1" in graph and graph.index("setpts=PTS/1.1") < graph.index("ass=filename")
+        first_retained = manifest.frame_ranges[0]
+        second_retained = manifest.frame_ranges[1]
+        unscaled_ms = 1490 + round(first_retained.duration * 1000 / 30) - round(second_retained.start_frame * 1000 / 30)
+        assert metadata["caption_sample"][0]["time_ms"] == 10 * int(unscaled_ms / 1.1 / 10)
 
 
 def test_audio_and_video_markers_together_after_cut(tmp_path):

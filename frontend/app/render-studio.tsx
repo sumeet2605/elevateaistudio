@@ -7,7 +7,7 @@ import { api, request } from "./api";
 type Span = { start_ms: number; end_ms: number };
 type Brand = { primary: string; highlight: string; background: string; width: number; height: number };
 type ProjectPlan = { id: string; brand: Brand; brand_revision: string; playbook_revision: string; issue: string | null };
-type RenderSettings = { framing: "fit" | "crop"; quality: "standard" | "high"; caption_words: number; caption_gap_ms: number; caption_min_ms: number };
+type RenderSettings = { framing: "fit" | "crop"; quality: "standard" | "high"; playback_speed: 1 | 1.1; caption_words: number; caption_gap_ms: number; caption_min_ms: number };
 type Job = { id: string; status: string; stage: string; progress: number | null; error: string | null };
 type CaptionWord = { text: string; highlighted: boolean };
 type Render = {
@@ -19,7 +19,7 @@ type Render = {
 };
 type State = { selected: ProjectPlan | null; job: Job | null; history: Render[] };
 
-const defaultSettings: RenderSettings = { framing: "fit", quality: "standard", caption_words: 7, caption_gap_ms: 380, caption_min_ms: 650 };
+const defaultSettings: RenderSettings = { framing: "fit", quality: "standard", playback_speed: 1, caption_words: 7, caption_gap_ms: 380, caption_min_ms: 650 };
 const stageNames: Record<string, string> = {
   queued: "Waiting for the local worker", extracting_audio: "Preparing render", checking_source: "Checking the original",
   building_captions: "Building captions", encoding_preview: "Encoding preview", verifying_preview: "Verifying the MP4",
@@ -111,6 +111,10 @@ export default function RenderStudio({ projectId, ready, seek }: { projectId: st
           <label>Quality <select value={settings.quality} onChange={(event) => edit("quality", event.target.value as RenderSettings["quality"])}>
             <option value="standard">Standard · faster encode</option><option value="high">High · cleaner detail</option>
           </select></label>
+          <label>Playback speed <select value={settings.playback_speed}
+            onChange={(event) => edit("playback_speed", Number(event.target.value) as RenderSettings["playback_speed"])}>
+            <option value={1}>1× · original pace</option><option value={1.1}>1.1× · faster pace</option>
+          </select></label>
           {([["caption_words", "Words per cue", 3, 14], ["caption_gap_ms", "Caption pause gap (ms)", 120, 1000],
             ["caption_min_ms", "Preferred minimum cue (ms)", 300, 1500]] as const).map(([key, name, min, max]) =>
             <label key={key}>{name}<input type="number" min={min} max={max} required value={Number.isNaN(settings[key]) ? "" : settings[key]}
@@ -140,7 +144,7 @@ export default function RenderStudio({ projectId, ready, seek }: { projectId: st
       <div className="render-frame"><video key={render.id} aria-label="Rendered video preview" controls playsInline preload="metadata"
         src={`${api}${root}/${render.id}/preview`} onError={() => setPlaybackError(true)}/></div>
       {playbackError && <p className="alert audio-metrics" role="alert">This browser could not play the preview.</p>}
-      <p className="small audio-metrics">{render.metadata.width} × {render.metadata.height} · {render.metadata.fps} fps · H.264 / AAC · {format(render.metadata.duration_seconds * 1000)}</p>
+      <p className="small audio-metrics">{render.metadata.width} × {render.metadata.height} · {render.metadata.fps} fps · H.264 / AAC · {format(render.metadata.duration_seconds * 1000)}{render.manifest.settings.playback_speed === 1.1 ? " · 1.1×" : ""}</p>
       <p className="muted small">{render.metadata.caption_count} caption cues · {render.metadata.render_seconds.toFixed(2)} s render · Plan {render.manifest.plan_id.slice(0, 8)}</p>
       {render.stale_reason && <p className="alert audio-metrics" role="status">{render.stale_reason}</p>}
       <div className="transcript-actions">

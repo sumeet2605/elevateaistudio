@@ -81,18 +81,23 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
         expression = "+".join(["1", *terms])
         zoom_filter = (f"zoompan=z='{expression}':x='(iw-iw/zoom)/2':y='(ih-ih/zoom)/2'"
                        f":d=1:s=1080x1920:fps={FPS},")
+    speed = manifest.settings.playback_speed
+    video_speed = (f"settb=AVTB,setpts=PTS/{speed:g},fps={FPS},tpad=stop_mode=clone:stop=1,"
+                   if speed != 1 else "")
     # Convert the source's display aspect to square pixels before fitting or cropping.
     nodes.append(f"{vout}settb=1/{FPS},setpts=N,scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,"
-                 f"{framing},setsar=1,{zoom_filter}ass=filename=captions.ass:fontsdir=fonts,format=yuv420p[v]")
+                 f"{framing},setsar=1,{zoom_filter}{video_speed}ass=filename=captions.ass:fontsdir=fonts,format=yuv420p[v]")
     leveling = "acompressor=threshold=0.126:ratio=2:attack=15:release=150:makeup=1.25," if manifest.voice_leveling else ""
-    nodes.append(f"{aout}{leveling}alimiter=limit=0.95:level=0:attack=1,asetpts=N/SR/TB[a]")
+    audio_speed = (f"atempo={speed:g},apad,atrim=end_sample={manifest.output_frames * (SAMPLE_RATE // FPS)},"
+                   if speed != 1 else "")
+    nodes.append(f"{aout}{audio_speed}{leveling}alimiter=limit=0.95:level=0:attack=1,asetpts=N/SR/TB[a]")
     preset, crf, audio_rate = ("medium", "17", "192k") if manifest.settings.quality == "high" else ("veryfast", "22", "160k")
     return [
         executable, "-hide_banner", "-nostdin", "-n", "-v", "error", "-nostats", "-progress", "pipe:1",
         "-protocol_whitelist", "file", "-f", "mov", "-enable_drefs", "0",
         "-copyts", "-start_at_zero", "-i", str(source), "-filter_complex_threads", "2",
         "-filter_complex", ";".join(nodes), "-map", "[v]", "-map", "[a]",
-        "-t", f"{manifest.total_frames / FPS:.6f}", "-c:v", "libx264", "-threads:v", "4", "-preset", preset,
+        "-t", f"{manifest.output_frames / FPS:.6f}", "-c:v", "libx264", "-threads:v", "4", "-preset", preset,
         "-crf", crf, "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", audio_rate, "-ar", str(SAMPLE_RATE),
         *(["-colorspace", "bt709", "-color_trc", "bt709", "-color_primaries", "bt709", "-color_range", "tv"] if hdr else []),
         "-map_metadata", "-1", "-map_chapters", "-1", "-movflags", "+faststart", "preview.mp4",

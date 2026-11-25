@@ -15,6 +15,7 @@ class RenderSettings(BaseModel):
 
     framing: Literal["fit", "crop"] = "fit"
     quality: Literal["standard", "high"] = "standard"
+    playback_speed: Literal[1.0, 1.1] = 1.0
     caption_words: int = Field(default=7, ge=3, le=14)
     caption_gap_ms: int = Field(default=380, ge=120, le=1000)
     caption_min_ms: int = Field(default=650, ge=300, le=1500)
@@ -119,5 +120,9 @@ class RenderManifest(BaseModel):
         return sum(span.duration for span in self.frame_ranges)
 
     @property
+    def output_frames(self):
+        return max(1, round(self.total_frames / self.settings.playback_speed))
+
+    @property
     def encoded_ms(self):
-        return milliseconds(self.total_frames)
+        return milliseconds(self.output_frames)
