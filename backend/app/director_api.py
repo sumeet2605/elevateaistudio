@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .brand import Brand
 from .director_store import DIRECTOR, reviewed_plan
+from .timeline import Span
 
 
 class Generation(BaseModel):
@@ -79,6 +80,10 @@ def director_routes(store):
     @router.post("/director/revisions/{revision}/operations/{index}", status_code=201, max_body_size=8192)
     def review(project_id: UUID, revision: UUID, index: int, decision: Decision):
         return reviewed_plan(store.revise(project_id, revision, index, decision.status))
+
+    @router.post("/director/revisions/{revision}/cuts", status_code=201, max_body_size=8192)
+    def story_cut(project_id: UUID, revision: UUID, cut: Span):
+        return reviewed_plan(store.revise(project_id, revision, manual_cut=cut))
 
     @router.get("/director/revisions/{revision}/export")
     def export(project_id: UUID, revision: UUID):

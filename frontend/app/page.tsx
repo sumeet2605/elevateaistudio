@@ -230,7 +230,7 @@ export default function Studio() {
           {media && active && tab === "silence" && <SilenceDetection key={active.id} projectId={active.id}
             hasAudio={!!media.audio_codec} ready={videoReady} position={position} seek={seek} />}
           {active && tab === "brand" && <BrandKit key={active.id} projectId={active.id}/>}
-          {active && tab === "director" && <DirectorStudio key={active.id} projectId={active.id} ready={videoReady} seek={seek}/>}
+          {active && tab === "director" && <DirectorStudio key={active.id} projectId={active.id} ready={videoReady} position={position} seek={seek}/>}
           {active && tab === "render" && <RenderStudio key={active.id} projectId={active.id} ready={videoReady} seek={seek}/>}
           </div>
         </main>

@@ -205,3 +205,32 @@ def test_mock_emphasizes_key_words_instead_of_entire_hook():
     _, decisions, _ = validate_recommendation(mock_response(data), data)
     assert next(op["quote"] for op in decisions if op["kind"] == "hook") == "What if the same problem is repeating?"
     assert next(op["quote"] for op in decisions if op["kind"] == "emphasis") == "same problem"
+
+
+def test_manual_story_cut_creates_undoable_revision_and_checks_speech_edges(studio, monkeypatch):
+    monkeypatch.setenv("ELEVATE_DIRECTOR_MODE", "mock")
+    client, _, jobs = studio
+    root, worker = ready_project(studio, monkeypatch)
+    base = root + "/director"
+    assert client.post(base, json={"playbook": "mystical-sumeet"}).status_code == 202
+    worker.process(jobs.claim())
+    plan = client.get(base).json()["selected"]
+    revision = f"{base}/revisions/{plan}"
+    request = revision + "/cuts"
+    assert client.post(request, json={"start_ms": 300, "end_ms": 550}).status_code == 422
+    response = client.post(request, json={"start_ms": 100, "end_ms": 550})
+    assert response.status_code == 201, response.text
+    updated = response.json()
+    assert updated["parent_id"] == plan
+    assert updated["approved_cuts"] == [{"start_ms": 100, "end_ms": 550}]
+    assert client.get(revision).json()["approved_cuts"] == []
+    assert client.post(request, json={"start_ms": 650, "end_ms": 850}).status_code == 409
+
+    new_revision = f"{base}/revisions/{updated['id']}"
+    hook = next(i for i, op in enumerate(updated["operations"]) if op["kind"] == "hook")
+    response = client.post(f"{new_revision}/operations/{hook}", json={"status": "accepted"})
+    assert response.status_code == 422
+    assert client.get(base).json()["selected"] == updated["id"]
+    cut = next(i for i, op in enumerate(updated["operations"]) if op["reason"] == "Manual story cut.")
+    undo = client.post(f"{new_revision}/operations/{cut}", json={"status": "rejected"})
+    assert undo.status_code == 201 and undo.json()["approved_cuts"] == []

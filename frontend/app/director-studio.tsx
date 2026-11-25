@@ -25,8 +25,8 @@ const names: Record<string, string> = { cut: "Cut", hook: "Hook", emphasis: "Cap
 const time = (ms: number) => (ms / 1000).toFixed(2) + " s";
 const label = (revision: Revision) => `${revision.event} · ${revision.playbook_revision} · ${revision.id.slice(0, 8)}`;
 
-export default function DirectorStudio({ projectId, ready, seek }: {
-  projectId: string; ready: boolean; seek: (seconds: number) => void;
+export default function DirectorStudio({ projectId, ready, seek, position }: {
+  projectId: string; ready: boolean; position: number; seek: (seconds: number) => void;
 }) {
   const root = `/projects/${projectId}/director`;
   const [state, setState] = useState<State>();
@@ -39,6 +39,8 @@ export default function DirectorStudio({ projectId, ready, seek }: {
   const [compared, setCompared] = useState<Plan>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cutStart, setCutStart] = useState("");
+  const [cutEnd, setCutEnd] = useState("");
   const [refresh, setRefresh] = useState(0);
   const job = state?.job;
   const active = job?.status === "queued" || job?.status === "running";
@@ -169,10 +171,33 @@ export default function DirectorStudio({ projectId, ready, seek }: {
         {[plan, compared].map((item) => <div key={item.id}><strong>{label(item)}</strong><p>{time(item.edited_duration_ms)} reviewed</p>
           <ul>{item.operations.map((op, index) => <li key={index}>{names[op.kind]} · {time(op.start_ms)} · {op.status}</li>)}</ul></div>)}
       </div>}
+      {plan.id === state?.selected && !plan.stale_silence && <details className="detection-settings">
+        <summary>Story cuts</summary>
+        <p className="muted small audio-metrics">Mark a section to remove using the original video’s clock.</p>
+        <form onSubmit={(event) => {
+          event.preventDefault();
+          revise("/cuts", { start_ms: Math.round(Number(cutStart) * 1000), end_ms: Math.round(Number(cutEnd) * 1000) });
+        }}>
+          <div className="settings-grid render-settings">
+            <label>Cut start (seconds)<input type="number" min={0} max={plan.source_duration_ms / 1000}
+              step={0.001} required value={cutStart} onChange={(event) => setCutStart(event.target.value)}/></label>
+            <label>Cut end (seconds)<input type="number" min={0} max={plan.source_duration_ms / 1000}
+              step={0.001} required value={cutEnd} onChange={(event) => setCutEnd(event.target.value)}/></label>
+          </div>
+          <div className="transcript-actions">
+            <button className="secondary" type="button" disabled={!ready || busy}
+              onClick={() => setCutStart(position.toFixed(3))}>Mark start at playhead</button>
+            <button className="secondary" type="button" disabled={!ready || busy}
+              onClick={() => setCutEnd(position.toFixed(3))}>Mark end at playhead</button>
+            <button className="primary" type="submit" disabled={busy || active || !cutStart || !cutEnd ||
+              Math.round(Number(cutEnd) * 1000) - Math.round(Number(cutStart) * 1000) < 100}>Add story cut</button>
+          </div>
+        </form>
+      </details>}
       <ol className="cut-list" aria-label="Director recommendations">
         {plan.operations.map((operation, index) => <li key={index} className="cut-item">
           <div className="cut-heading"><button className="timecode" disabled={!ready} onClick={() => seek(operation.start_ms / 1000)}>
-            {time(operation.start_ms)}</button><strong>{names[operation.kind]}</strong><span className={`cut-status ${operation.status}`}>{operation.status}</span></div>
+            {time(operation.start_ms)}</button><strong>{operation.reason === "Manual story cut." ? "Story cut" : names[operation.kind]}</strong><span className={`cut-status ${operation.status}`}>{operation.status}</span></div>
           <p className="small">{operation.quote || operation.idea || (operation.zoom_percent ? `${operation.zoom_percent}% zoom` : `Through ${time(operation.end_ms)}`)}</p>
           <p className="muted small">{operation.reason}</p>
           {plan.id === state?.selected && !plan.stale_silence && <div className="transcript-actions">

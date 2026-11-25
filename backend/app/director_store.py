@@ -9,6 +9,7 @@ from fastapi import HTTPException
 from .analysis_store import AnalysisStore
 from .brand import Brand
 from .director import PLAYBOOKS, PROMPT_VERSION, DirectorError, DirectorPlan, DirectorSettings, request_body, usage_record
+from .render_manifest import FPS
 from .silence import EditingPlan
 from .timeline import Span, Timeline, merge_spans
 from .transcription import Transcript
@@ -211,7 +212,7 @@ class DirectorStore:
         keys = ("id", "parent_id", "event", "created_at", "model", "playbook_revision")
         return [{key: plan[key] for key in keys} for row in rows for plan in [json.loads(row[0])]]
 
-    def revise(self, project_id, plan_id, index=None, status=None):
+    def revise(self, project_id, plan_id, index=None, status=None, *, manual_cut: Span | None = None):
         with self.projects.connect() as db:
             db.execute("BEGIN IMMEDIATE")
             row = db.execute("SELECT payload FROM director_plans WHERE id=? AND project_id=?",
@@ -219,20 +220,59 @@ class DirectorStore:
             if not row:
                 raise HTTPException(404, "Director revision not found.")
             plan = json.loads(row[0])
-            if index is not None:
+            reviewing = index is not None or manual_cut is not None
+            if reviewing:
                 if self.stale(db, project_id, plan):
                     raise HTTPException(409, "Silence decisions changed. Generate a new director draft.")
                 current = db.execute("SELECT plan_id FROM director_current WHERE project_id=?",
                                      (str(project_id),)).fetchone()
                 if current[0] != str(plan_id):
                     raise HTTPException(409, "Select or restore this revision before reviewing it.")
+            if index is not None:
                 if not 0 <= index < len(plan["operations"]):
                     raise HTTPException(404, "Recommendation not found.")
                 plan["operations"][index]["status"] = status
+            if manual_cut is not None:
+                self.add_manual_cut(project_id, plan, manual_cut)
+            try:
+                updated = reviewed_plan(plan)
+            except (DirectorError, ValueError) as error:
+                raise HTTPException(422, str(error)) from error
+            if manual_cut is not None:
+                if not updated["retained_segments"]:
+                    raise HTTPException(422, "The story cut would remove the entire video.")
+                plan["proposed_retained_segments"] = updated["retained_segments"]
             plan.update(id=str(uuid4()), parent_id=str(plan_id), created_at=now(),
-                        event="review" if index is not None else "restore")
+                        event="review" if reviewing else "restore")
             self.write(db, plan)
             return {**plan, "stale_silence": self.stale(db, project_id, plan)}
+
+
+    def add_manual_cut(self, project_id, plan, cut: Span):
+        if cut.duration < 100 or cut.end_ms > plan["source_duration_ms"]:
+            raise HTTPException(422, "Choose a source range of at least 0.1 seconds within the video.")
+        previously_approved = reviewed_plan(plan)["approved_cuts"]
+        if any(item["start_ms"] <= cut.start_ms and cut.end_ms <= item["end_ms"] for item in previously_approved):
+            raise HTTPException(422, "This range is already cut.")
+        filename = self.projects.media_dir(project_id) / f"transcription-{UUID(plan['transcript_revision'])}.json"
+        try:
+            transcript = Transcript.model_validate_json(filename.read_bytes())
+        except (OSError, ValueError) as error:
+            raise HTTPException(409, "The selected transcript is unavailable.") from error
+        if transcript.project_id != project_id or transcript.source_media_id != plan["source_media_id"]:
+            raise HTTPException(409, "The transcript does not match this source.")
+        # The renderer rounds retained ranges inward on the output frame grid.
+        start = math.floor(cut.start_ms * FPS / 1000) / FPS
+        end = math.ceil(cut.end_ms * FPS / 1000) / FPS
+        for segment in transcript.segments:
+            for word in segment.words or [segment]:
+                if word.start < start < word.end or word.start < end < word.end:
+                    raise HTTPException(422, "A cut edge falls inside timed speech. Move it between words.")
+        plan["operations"].append({
+            "kind": "cut", **cut.model_dump(), "reason": "Manual story cut.",
+            "first_word": None, "last_word": None, "zoom_percent": None,
+            "idea": None, "quote": None, "status": "accepted",
+        })
 
 
 def reviewed_plan(plan):
@@ -249,8 +289,8 @@ def reviewed_plan(plan):
         a = timeline.source_to_edited(op["start_ms"])
         # The end is exclusive. Map its previous millisecond and then advance.
         b = timeline.source_to_edited(op["end_ms"] - 1)
-        if a is None or b is None:
-            raise DirectorError("An accepted event crosses an approved cut.")
+        if a is None or b is None or b - a != op["end_ms"] - 1 - op["start_ms"]:
+            raise DirectorError("An accepted event overlaps this cut. Reject the event in AI Director before cutting this range.")
         edited.append({**op, "edited_start_ms": a, "edited_end_ms": b + 1})
     return {**plan, "approved_cuts": [item.model_dump() for item in approved],
             "retained_segments": [item.model_dump() for item in timeline.retained],
