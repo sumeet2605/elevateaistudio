@@ -22,8 +22,8 @@ from .visuals import BoundVisual, VisualEvent
 
 IMAGE_JOB = "visual_image"
 GUIDANCE = {
-    "mystical-sumeet": "Use 2–4 meaningful visual inserts per edited minute at most as a guideline. Prefer grounded visuals and leave healing sessions uninterrupted.",
-    "educational": "Prioritize diagrams and specific examples over decorative stock.",
+    "mystical-sumeet": "Mystical Storytelling defaults to restrained full-screen cutaways. Start with 2–3 meaningful inserts per edited minute, typically 2–4 playback seconds each, and aim to keep the speaker visible for roughly 75–85% when inserts are useful. Treat these as flexible guides and preserve more speaker time when the story benefits. Prefer relevant personal footage, then relevant stock, then clearly illustrative AI imagery. Use clean hard cuts. Suggest graphics only when they clarify the message. Speaker-only is a valid choice, especially for healing and personal reflections.",
+    "educational": "Mixed Storytelling is optional for educational and concept-heavy reels. Use relevant footage plus a restrained card or concept flow when it makes an idea easier to understand. Speaker-only remains valid.",
     "storytelling": "Use a contextual cutaway when it advances the story and return to the speaker for the insight.",
     "authority": "Use restrained professional examples. Never fabricate supporting evidence.",
 }
