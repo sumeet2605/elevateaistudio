@@ -148,3 +148,10 @@ video { background: #08090a; display: block; width: 100%; height: auto; max-heig
 .director-lanes .lane-0 { background: #579b74; } .director-lanes .lane-2 { background: #d5c8ae; } .director-lanes .lane-3 { background: #9b88bf; }
 .comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
 .comparison > div { border: 1px solid var(--line); padding: 8px; border-radius: 6px; overflow-wrap: anywhere; }
+
+.render-settings { margin-top: 8px; }
+.render-frame { display: grid; place-items: center; margin: 11px 0; padding: 8px; border-radius: 8px; background: #0d0f10; }
+.render-frame video { width: auto; max-width: 100%; height: min(50vh, 430px); max-height: none; aspect-ratio: 9 / 16; object-fit: contain; }
+.caption-style { border-radius: 7px; margin: 8px 0; padding: 15px 10px; text-align: center; font-size: clamp(14px, 2vw, 19px); font-weight: bold; }
+.render-cuts { margin: 6px 0; font-size: 12px; }
+.render-cuts li { margin: 5px 0; }

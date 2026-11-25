@@ -1,0 +1,93 @@
+import json
+import shutil
+from datetime import datetime, timezone
+from fractions import Fraction
+from pathlib import Path
+from time import perf_counter
+
+from .captions import ass_asset, captions_for
+from .ffmpeg_render import ffmpeg_args, run_ffmpeg, streams
+from .render_manifest import FPS
+from .render_store import Renders, digest
+from .transcription import Transcript
+
+FONTS = Path(__file__).parent / "render_fonts"
+
+
+def render_video(settings, jobs, job, stage):
+    started = perf_counter()
+    store = Renders(jobs)
+    render_id = job["id"]
+    manifest = store.manifest(render_id)
+    with store.projects.connect() as db:
+        issue = store.stale(db, manifest)
+    if issue:
+        raise ValueError(issue)
+    project = store.projects.get(manifest.project_id)
+    source = store.projects.source_path(manifest.project_id, project["media"]).resolve()
+    stage("checking_source")
+    if digest(source) != manifest.source_media_id:
+        raise ValueError("The original no longer matches the approved plan.")
+    transcript = Transcript.model_validate_json(store.transcript_path(
+        manifest.project_id, manifest.transcript_revision).read_bytes())
+    if (transcript.project_id != manifest.project_id or transcript.source_media_id != manifest.source_media_id
+            or abs(transcript.source_duration * 1000 - manifest.source_duration_ms) >= 1):
+        raise ValueError("The transcript does not match the original source.")
+    stage("building_captions")
+    cues, omitted = captions_for(manifest, transcript)
+    if not cues:
+        raise ValueError("No usable recorded caption timestamps remain after the cuts.")
+    video, audio, _ = streams(settings.ffprobe, source)
+    directory = store.directory(manifest.project_id, render_id)
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    work = directory.with_name(f".staging-{render_id}")
+    work.mkdir()
+    published = False
+    try:
+        (work / "captions.ass").write_text(ass_asset(manifest.brand, cues), encoding="utf-8")
+        (work / "manifest.json").write_text(manifest.model_dump_json(indent=2), encoding="utf-8")
+        (work / "fonts").mkdir()
+        for name in ("NotoSans-Bold.ttf", "NotoSansDevanagari-Bold.ttf"):
+            shutil.copyfile(FONTS / name, work / "fonts" / name)
+        executable = shutil.which(settings.ffmpeg)
+        if not executable:
+            raise ValueError("FFmpeg with libass and libx264 is required to render.")
+        args = ffmpeg_args(str(Path(executable).resolve()), source, manifest, video["index"], audio["index"])
+        run_ffmpeg(args, work, manifest.encoded_ms, lambda progress: stage("encoding_preview", progress))
+        stage("verifying_preview", 0.99)
+        preview = work / "preview.mp4"
+        verified_video, verified_audio, container = streams(settings.ffprobe, preview)
+        actual = float(container["duration"])
+        video_length = float(verified_video["duration"])
+        audio_length = float(verified_audio["duration"])
+        if (verified_video["codec_name"], verified_audio["codec_name"], verified_video["width"],
+                verified_video["height"], verified_video["pix_fmt"]) != ("h264", "aac", 1080, 1920, "yuv420p"):
+            raise ValueError("FFprobe found unexpected output codecs, dimensions, or pixel format.")
+        if Fraction(verified_video["avg_frame_rate"]) != FPS:
+            raise ValueError("FFprobe found an unexpected output frame rate.")
+        if max(abs(actual - manifest.encoded_ms / 1000), abs(video_length - audio_length)) > 0.07:
+            raise ValueError("The encoded duration or stream alignment exceeded the expected frame tolerance.")
+        metadata = {
+            "created_at": datetime.now(timezone.utc).isoformat(), "sha256": digest(preview),
+            "width": 1080, "height": 1920, "video_codec": "h264", "audio_codec": "aac",
+            "pixel_format": "yuv420p", "fps": FPS, "duration_seconds": actual,
+            "video_seconds": video_length, "audio_seconds": audio_length, "size_bytes": preview.stat().st_size,
+            "render_seconds": round(perf_counter() - started, 3), "caption_count": len(cues),
+            "omitted_words": omitted,
+            "caption_sample": [{"time_ms": cue.start_ms, "lines": [[
+                {"text": word.text, "highlighted": word.highlighted} for word in line
+            ] for line in cue.lines]} for cue in cues[:3]],
+        }
+        (work / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
+        shutil.rmtree(work / "fonts")
+        (work / "ffmpeg.log").unlink()
+        for entry in work.iterdir():
+            entry.chmod(0o444)
+        stage("publishing_preview", 0.99)
+        store.publish(manifest, render_id, metadata, work, directory)
+        published = True
+    finally:
+        if work.exists():
+            shutil.rmtree(work)
+        if not published and directory.exists():
+            shutil.rmtree(directory)

@@ -6,6 +6,8 @@ import threading
 from datetime import datetime, timezone
 from uuid import UUID
 
+from fastapi import HTTPException
+
 from .analysis_store import ANALYSIS, AnalysisStore
 from .analysis_worker import analyse
 from .audio import AudioError, extract_audio
@@ -14,6 +16,8 @@ from .director_store import DIRECTOR, DirectorStore
 from .director_worker import direct
 from .jobs import Cancelled, Jobs
 from .projects import Projects
+from .render_store import RENDER, Renders
+from .render_worker import render_video
 from .transcription import FasterWhisper, Transcript, TranscriptionSettings, segment_from_model
 
 logger = logging.getLogger(__name__)
@@ -46,6 +50,9 @@ class Worker:
 
         published = False
         try:
+            if job["type"] == RENDER:
+                render_video(self.settings, self.jobs, job, stage)
+                return
             if job["type"] == DIRECTOR:
                 direct(self.jobs, job, stage)
                 return
@@ -88,7 +95,9 @@ class Worker:
             self.jobs.finish(job_id, "interrupted", "The local worker stopped before finishing.")
         except Exception as exc:
             logger.exception("%s job %s failed", job["type"], job_id)
-            if isinstance(exc, (AudioError, FileNotFoundError, ImportError, ValueError)):
+            if isinstance(exc, HTTPException):
+                detail = str(exc.detail)
+            elif isinstance(exc, (AudioError, FileNotFoundError, ImportError, ValueError)):
                 detail = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
             else:
                 detail = "Check the worker log, model installation, and network access, then retry."
@@ -124,6 +133,7 @@ def main():
     jobs.initialize()
     AnalysisStore(jobs).initialize()
     DirectorStore(jobs).initialize()
+    Renders(jobs).initialize()
     engine = FasterWhisper(TranscriptionSettings.from_env(settings.data_dir))
     worker = Worker(settings, jobs, engine)
     for event in (signal.SIGTERM, signal.SIGINT):

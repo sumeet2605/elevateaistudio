@@ -15,6 +15,8 @@ from .director_store import DirectorStore
 from .jobs import Jobs
 from .media import ingest
 from .projects import ProjectInput, ProjectNotFound, Projects, SourceExists
+from .render_api import render_routes
+from .render_store import Renders
 from .transcription_api import transcription_routes
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,7 @@ def create_app(settings: Settings | None = None):
     jobs = Jobs(projects)
     analyses = AnalysisStore(jobs)
     director = DirectorStore(jobs)
+    renders = Renders(jobs)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -33,6 +36,7 @@ def create_app(settings: Settings | None = None):
         jobs.initialize()
         analyses.initialize()
         director.initialize()
+        renders.initialize()
         yield
 
     app = FastAPI(title="Elevate AI Studio", lifespan=lifespan)
@@ -110,6 +114,7 @@ def create_app(settings: Settings | None = None):
     app.include_router(transcription_routes(projects, jobs))
     app.include_router(analysis_routes(analyses))
     app.include_router(director_routes(director))
+    app.include_router(render_routes(renders))
     return app
 
 

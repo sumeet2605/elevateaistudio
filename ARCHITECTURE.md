@@ -15,6 +15,8 @@
 | `backend/app/audio_analysis.py` and `analysis_worker.py` | Aligned PCM measurements, FFmpeg silence, Silero speech evidence, and background analysis |
 | `backend/app/silence.py` and `timeline.py` | Detection presets, candidate validation, versioned plans, and bidirectional time mapping |
 | `backend/app/analysis_store.py` and `analysis_api.py` | Analysis configuration, cache, review transactions, plan history, and JSON export |
+| `backend/app/render_manifest.py`, `captions.py`, and `ffmpeg_render.py` | Fixed render compiler, frame/sample alignment, and styled ASS captions |
+| `backend/app/render_store.py`, `render_worker.py`, and `render_api.py` | Durable render snapshots, artifact publication, review, and final export |
 | `backend/tests/` | API and media integration checks with synthetic fixtures |
 | `data/` | Ignored runtime database and project files |
 | `.github/workflows/` | Pull request and push checks |
@@ -51,15 +53,15 @@ The backend uses strict Responses API JSON Schema with no tools. It separately v
 
 Every generation, review, or restore creates a new project-scoped revision. Approved silence ranges form the base. Accepted director cuts extend that base, and accepted events use the existing timeline mapper to derive edited time. The active pointer changes without rewriting old revisions. A silence plan change makes old director revisions read-only and blocks their reviewed export until a fresh draft is generated. Token accounting is attached to jobs separately from validation so billed invalid responses remain visible.
 
-## Planned Phase 1 components
+## Day 5 render and approval
 
-| Component | Responsibility |
-| --- | --- |
-| Caption generation | Convert edited caption spans into styled subtitle assets with brand colors and keyword emphasis |
-| Rendering | Translate approved typed operations into fixed FFmpeg arguments |
-| Preview and export | Preview a versioned render, record approval on that version, and offer its final MP4 |
+A render request snapshots a validated manifest using the current immutable director revision, the transcript hash, source SHA-256, brand and playbook revisions, approved cuts, accepted emphasis, and output settings. The existing worker claims the attempt, verifies the source, writes the UTF-8 ASS asset, and compiles an FFmpeg argument array. No model output can become a command, path, filter expression, codec setting, or shell argument. A one-pass graph trims all ranges and concatenates them before applying captions and the final H.264/AAC encode.
 
-The proposed default brand, **Elevate with Sumeet**, uses a premium, cinematic, spiritual but practical tone. Its preset will define bold white captions, warm gold highlights, charcoal background, minimal transitions, subtle zooms, natural voice audio, the ending “Let's Elevate!”, and 1080 × 1920 MP4 with H.264 and AAC. Each setting belongs to a brand revision so new projects can adopt changes and old plans can still render consistently.
+Video and audio use the shared source clock. On the 30 fps render grid each retained start rounds up and each retained end rounds down. The audio uses the matching integer sample offsets at 48 kHz, with short seam fades. Missing audio at the source tail is padded with silence. The caption mapper accumulates the actual retained frame lengths and uses this clock to split cues and place words. ASS centiseconds use downward rounding for consistent non-overlap. Media timing can differ slightly from the exact authored plan at each seam.
+
+Each completed attempt lives in its own directory with the render manifest, ASS file, metadata, and preview. The worker verifies codecs, dimensions, duration, and audio/video length before publishing. It atomically renames the staging directory inside the SQLite completion operation. Cancellation kills FFmpeg and removes temporary output. Crash leftovers stay isolated under their attempt IDs. Retry uses a new attempt and the same validated snapshot while it is current.
+
+Preview, approval, and final export are separate. Approval records the exact MP4 checksum and plan fingerprint. Final export verifies the current revisions and both the original and rendered checksums. A rejection revokes the approval, while older decisions stay in the audit table. The browser can play historical previews for comparison.
 
 ## Planned editing decisions and time mapping
 
