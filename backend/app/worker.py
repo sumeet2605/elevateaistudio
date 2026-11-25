@@ -15,6 +15,7 @@ from .config import Settings
 from .director_store import DIRECTOR, DirectorStore
 from .director_worker import direct
 from .jobs import Cancelled, Jobs
+from .motion_store import FACE_ANALYSIS, MotionStore
 from .projects import Projects
 from .render_store import RENDER, Renders
 from .render_worker import render_video
@@ -50,6 +51,9 @@ class Worker:
 
         published = False
         try:
+            if job["type"] == FACE_ANALYSIS:
+                MotionStore(self.jobs).analyse(job, stage, self.settings)
+                return
             if job["type"] == RENDER:
                 render_video(self.settings, self.jobs, job, stage)
                 return

@@ -13,3 +13,5 @@ Scheduling depends on local model setup, test footage, and review feedback. Rubr
 Day 6 uses the [coaching reel quality pilot rubric](docs/quality-pilot.md) to validate uncaptioned recordings and compare render performance.
 
 Day 7 adds versioned caption presets, correction history, and ASS word effects in a mobile-first Captions workspace.
+
+Day 8 adds the Camera & Motion workspace, local face-analysis caching, reviewed camera moves and revision-bound export approval. The real-footage style default remains pending brand review.

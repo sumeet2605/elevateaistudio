@@ -37,6 +37,9 @@ class Playbook(BaseModel):
     hook_handling: str = Field(min_length=1)
     caption_emphasis: str = Field(min_length=1)
     max_zooms_per_minute: int = Field(ge=0, le=12)
+    motion_max: int = Field(default=115, ge=100, le=125)
+    motion_transition: Literal["smooth", "punch", "hold"] = "smooth"
+    motion_guidance: str = Field(default="Use camera movement selectively.", min_length=1, max_length=320)
     b_roll: str = Field(min_length=1)
     transitions: Literal["minimal", "hard-cuts"]
     target_style: str = Field(min_length=1)

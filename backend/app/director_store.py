@@ -71,6 +71,7 @@ class DirectorStore:
         return next((entry for entry in self.brands(project_id) if entry["id"] == revision), None)
 
     def inputs(self, project_id, playbook_id):
+        from .motion_store import MotionStore, rules, suggested_events
         cfg = DirectorSettings.from_env()
         if cfg.mode not in ("openai", "mock"):
             raise HTTPException(503, "Set ELEVATE_DIRECTOR_MODE to mock or openai.")
@@ -107,6 +108,19 @@ class DirectorStore:
         # Keep eligible AI cuts inside Day 3's guarded, high-confidence candidates.
         eligible = [cut.proposed.model_dump() for cut in silence.proposed_cuts
                     if cut.status == "pending" and cut.confidence == "high"]
+        with self.projects.connect() as db:
+            has_motion = db.execute("SELECT 1 FROM sqlite_master WHERE name='motion_revisions'").fetchone()
+            current = db.execute("""SELECT p.payload FROM director_current c JOIN director_plans p ON p.id=c.plan_id
+                                   WHERE c.project_id=?""", (str(project_id),)).fetchone()
+            current_plan = json.loads(current[0]) if current else None
+            face = MotionStore.face(db, project_id) if has_motion else None
+            motion = MotionStore.latest(db, project_id, current_plan["id"]) if has_motion and current_plan else None
+        saved = json.loads(motion["payload"]) if motion else {}
+        current_cuts = ([{"start_ms": op["start_ms"], "end_ms": op["end_ms"]}
+                         for op in current_plan["operations"] if op["kind"] == "cut" and op["status"] == "accepted"]
+                        if current_plan and current_plan["source_media_id"] == media["sha256"] else [])
+        energetic = saved.get("settings", {}).get("energy") == "energetic"
+        maximum, transition, style = rules(playbook_id, energetic)
         context = {
             "context_id": str(uuid4()), "duration_ms": duration,
             "media": {key: media.get(key) for key in ("width", "height", "video_codec", "audio_codec")},
@@ -118,6 +132,10 @@ class DirectorStore:
             "retained_segments": [span.model_dump() for span in silence.retained_segments],
             "eligible_cuts": eligible, "minimum_cut_ms": silence.detection.minimum_removable_ms,
             "brand": brand["settings"], "playbook": playbook.model_dump(),
+            "brand_revision": brand["id"], "playbook_revision": f"{playbook.id}@{playbook.revision}",
+            "camera_motion": {"maximum": maximum, "transition": transition, "guidance": style,
+                              "face_summary": face["summary"] if face else None, "other_approved_cuts": current_cuts,
+                              "existing": saved.get("events", suggested_events(current_plan) if current_plan else [])},
         }
         refs = {"source_media_id": media["sha256"], "transcript_revision": transcript_id,
                 "silence_plan_revision": str(silence.id),

@@ -15,6 +15,28 @@ from .transcription import Transcript
 FONTS = Path(__file__).parent / "render_fonts"
 
 
+def camera_notice(manifest, video):
+    if not manifest.camera:
+        return None
+    width, height = video["width"], video["height"]
+    sar = video.get("sample_aspect_ratio", "1:1")
+    left, _, right = sar.partition(":")
+    if left.isdecimal() and right.isdecimal() and int(left) and int(right):
+        width *= int(left) / int(right)
+    rotation = next((item["rotation"] for item in video.get("side_data_list", []) if "rotation" in item),
+                    video.get("tags", {}).get("rotate", "0"))
+    if str(rotation).lstrip("-").isdecimal() and int(rotation) % 180 == 90:
+        width, height = height, width
+    mode = manifest.camera.framing
+    fit = mode == "fit" or (mode == "original" and manifest.settings.framing == "fit")
+    source_scale = (max if fit else min)(width / 1080, height / 1920)
+    peak = max((max(event.start_zoom, event.end_zoom) for event in manifest.motion_events
+                if event.status == "accepted"), default=100)
+    if source_scale < peak / 100:
+        return "Selected framing upscales part of the source. Review fine detail before export."
+    return None
+
+
 def render_video(settings, jobs, job, stage):
     started = perf_counter()
     store = Renders(jobs)
@@ -91,6 +113,7 @@ def render_video(settings, jobs, job, stage):
             "video_seconds": video_length, "audio_seconds": audio_length, "size_bytes": preview.stat().st_size,
             "render_seconds": round(perf_counter() - started, 3), "caption_count": len(cues),
             "omitted_words": omitted, "caption_generation_seconds": caption_seconds,
+            "camera_notice": camera_notice(manifest, video),
             "ass_events": asset.count("\nDialogue:"), "approval_fingerprint": manifest.approval_fingerprint,
             "caption_sample": [{"time_ms": cue.start_ms, "lines": [[
                 {"text": word.text, "highlighted": word.highlighted} for word in line

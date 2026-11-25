@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 from .audio import AudioError
+from .motion_render import baseline_crop, camera_zoom, tracked
 from .render_manifest import FPS, SAMPLE_RATE, RenderManifest
 
 
@@ -12,8 +13,7 @@ def streams(executable, path):
     try:
         output = subprocess.run([
             executable, "-v", "error", "-protocol_whitelist", "file",
-            "-show_entries",
-            "format=duration,size:stream=index,codec_type,codec_name,width,height,pix_fmt,avg_frame_rate,duration,start_time,sample_rate,color_transfer,color_space,color_primaries:stream_disposition=attached_pic",
+            "-show_streams", "-show_format",
             "-of", "json", str(path),
         ], capture_output=True, check=True, timeout=30)
         payload = json.loads(output.stdout)
@@ -33,7 +33,11 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
         raise ValueError("Invalid source stream indices.")
     count = len(manifest.frame_ranges)
     colour = "0x" + manifest.brand.background[1:].upper()
-    crop = manifest.settings.framing == "crop"
+    camera = manifest.camera
+    mode = camera.framing if camera else "original"
+    crop = manifest.settings.framing == "crop" if mode == "original" else mode != "fit"
+    keys = tracked(manifest) if camera else []
+    focus_crop = baseline_crop(camera, keys if mode == "face" else []) if camera else ""
     scale = ("scale=1080:1920:force_original_aspect_ratio="
              + ("increase" if crop else "decrease") + ":force_divisible_by=2")
     frame = ("crop=1080:1920" if crop else
@@ -41,7 +45,7 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
     hdr = color_transfer in HDR_TRANSFERS
     tone = ("zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,"
             "tonemap=hable:desat=2,zscale=t=bt709:m=bt709:r=tv,format=yuv420p," if hdr else "")
-    framing = f"{scale},{tone}{frame}"
+    framing = f"{focus_crop}{scale},{tone}{frame}"
     vprefix = (f"[0:{video_index}]fps={FPS}:start_time=0,"
                f"tpad=stop_mode=clone:stop_duration={manifest.source_duration_ms / 1000:.3f}")
     aprefix = f"[0:{audio_index}]aresample={SAMPLE_RATE}:async=1:first_pts=0,apad"
@@ -70,7 +74,7 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
         vout, aout = "[vjoin]", "[ajoin]"
     else:
         vout, aout = "[outv0]", "[outa0]"
-    zoom_filter = ""
+    zoom_filter = camera_zoom(manifest, keys) if camera else ""
     if manifest.zooms:
         terms = []
         for start, end, percent in manifest.edited_zooms():

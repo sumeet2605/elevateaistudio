@@ -14,6 +14,7 @@ from .config import Settings
 from .director_api import director_routes
 from .director_store import DirectorStore
 from .jobs import Jobs
+from .motion_store import motion_routes
 from .media import ingest
 from .projects import ProjectInput, ProjectNotFound, Projects, SourceExists
 from .render_api import render_routes
@@ -117,6 +118,7 @@ def create_app(settings: Settings | None = None):
     app.include_router(director_routes(director))
     app.include_router(render_routes(renders))
     app.include_router(caption_routes(renders))
+    app.include_router(motion_routes(renders))
     return app
 
 

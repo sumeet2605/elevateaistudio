@@ -11,9 +11,10 @@ import BrandKit from "./brand-kit";
 import DirectorStudio from "./director-studio";
 
 import CaptionsStudio from "./captions-studio";
+import MotionStudio from "./motion-studio";
 import RenderStudio from "./render-studio";
 
-const tabs = ["source", "transcription", "silence", "brand", "director", "captions", "render"] as const;
+const tabs = ["source", "transcription", "silence", "brand", "director", "captions", "motion", "render"] as const;
 type Tab = typeof tabs[number];
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -81,7 +82,8 @@ export default function Studio() {
   }
 
   function seek(seconds: number) {
-    if (video.current) video.current.currentTime = seconds;
+    setPosition(seconds);
+    if (video.current?.readyState) video.current.currentTime = seconds;
   }
 
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -192,6 +194,8 @@ export default function Studio() {
               tabIndex={tab === "director" ? 0 : -1} onClick={() => selectTab("director")}>AI Director</button>
             <button id="captions-tab" role="tab" aria-selected={tab === "captions"} aria-controls="captions-panel"
               tabIndex={tab === "captions" ? 0 : -1} onClick={() => selectTab("captions")}>Captions</button>
+            <button id="motion-tab" role="tab" aria-selected={tab === "motion"} aria-controls="motion-panel"
+              tabIndex={tab === "motion" ? 0 : -1} onClick={() => selectTab("motion")}>Camera &amp; Motion</button>
             <button id="render-tab" role="tab" aria-selected={tab === "render"} aria-controls="render-panel"
               tabIndex={tab === "render" ? 0 : -1} onClick={() => selectTab("render")}>Render</button>
           </div>}
@@ -235,6 +239,8 @@ export default function Studio() {
           {active && tab === "brand" && <BrandKit key={active.id} projectId={active.id}/>}
           {active && tab === "director" && <DirectorStudio key={active.id} projectId={active.id} ready={videoReady} position={position} seek={seek}/>}
           {active && tab === "captions" && <CaptionsStudio key={active.id} projectId={active.id} sourceUrl={api + mediaEndpoint} seek={seek}/>}
+          {active && tab === "motion" && <MotionStudio key={active.id} projectId={active.id} sourceUrl={api + mediaEndpoint}
+            position={position} duration={media?.duration_seconds ?? 0} seek={seek}/>}
           {active && tab === "render" && <RenderStudio key={active.id} projectId={active.id} ready={videoReady} seek={seek}/>}
           </div>
         </main>

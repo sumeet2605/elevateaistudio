@@ -11,6 +11,7 @@ from .director import DirectorPlan
 from .director_store import DirectorStore, reviewed_plan
 from .render_manifest import RenderManifest, RenderSettings, Zoom, frame_spans
 from .timeline import Span
+from .motion_store import MotionStore, manifest_motion, suggested_events
 
 RENDER = "render"
 
@@ -26,6 +27,7 @@ class Renders:
         self.projects = jobs.projects
 
     def initialize(self):
+        MotionStore(self.jobs).initialize()
         with self.projects.connect() as db:
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS caption_revisions (
@@ -85,7 +87,7 @@ class Renders:
             return "The original source no longer matches this plan."
         return None
 
-    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True):
+    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True, include_motion=True):
         with self.projects.connect() as db:
             db.execute("BEGIN")
             selected = self.selected(db, project_id, plan_id)
@@ -94,6 +96,7 @@ class Renders:
             raw, plan = selected
             issue = self.revision_issue(db, project_id, plan)
             caption = self.latest_caption(db, project_id, plan_id) if include_captions else None
+            motion = MotionStore.latest(db, project_id, plan["id"]) if include_motion else None
         if issue:
             raise HTTPException(409, issue)
         try:
@@ -112,13 +115,17 @@ class Renders:
             notices.append("The brand’s optional music preference is deferred for this preview.")
         highlights = []
         zooms = []
+        generated_motion = False
         for operation in reviewed["reviewed_events"]:
             kind = operation["kind"]
             if kind == "emphasis":
                 highlights.append(Span(start_ms=operation["start_ms"], end_ms=operation["end_ms"]))
             elif kind == "zoom":
-                zooms.append(Zoom(source=Span(start_ms=operation["start_ms"], end_ms=operation["end_ms"]),
-                                  percent=operation["zoom_percent"]))
+                if not motion and operation.get("zoom_motion") is None and operation["zoom_percent"] > 100:
+                    zooms.append(Zoom(source=Span(start_ms=operation["start_ms"], end_ms=operation["end_ms"]),
+                                      percent=operation["zoom_percent"]))
+                elif not motion:
+                    generated_motion = True
             elif kind == "hook":
                 notices.append("The accepted hook is advisory. The source order is preserved.")
             elif kind == "b_roll":
@@ -129,6 +136,11 @@ class Renders:
                 raise HTTPException(422, f"The accepted {kind.replace('_', ' ')} operation is unsupported in Day 5. Review it again before rendering.")
         retained = [Span.model_validate(span) for span in reviewed["retained_segments"]]
         try:
+            camera = {"zooms": zooms}
+            if generated_motion:
+                camera = {"camera": {"energy": "energetic"}, "motion_events": suggested_events(plan)}
+            if motion:
+                camera = manifest_motion(motion["id"], motion["payload"])
             return RenderManifest(
                 project_id=project_id, plan_id=plan_id, plan_fingerprint=hashlib.sha256(raw.encode()).hexdigest(),
                 caption_revision=caption["id"] if caption else None,
@@ -138,7 +150,7 @@ class Renders:
                 brand_revision=plan["brand_revision"], playbook_revision=plan["playbook_revision"],
                 brand=plan["brand"], settings=settings, source_duration_ms=plan["source_duration_ms"],
                 cuts=reviewed["approved_cuts"], retained=retained, frame_ranges=frame_spans(retained),
-                emphasis=highlights, zooms=zooms, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
+                emphasis=highlights, **camera, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
                 notices=notices,
             )
         except ValidationError as error:
@@ -167,7 +179,7 @@ class Renders:
             raise ValueError("The pinned caption revision changed or is missing.")
         return json.loads(row[0])
 
-    def stale(self, db, manifest, *, check_captions=True):
+    def stale(self, db, manifest, *, check_captions=True, check_motion=True):
         selected = self.selected(db, manifest.project_id, manifest.plan_id)
         if not selected or hashlib.sha256(selected[0].encode()).hexdigest() != manifest.plan_fingerprint:
             return "The selected editing-plan revision changed. Generate a new preview."
@@ -178,6 +190,12 @@ class Renders:
                 caption and hashlib.sha256(caption["payload"].encode()).hexdigest() != manifest.caption_fingerprint
             ):
                 return "Captions changed. Generate and approve a new preview."
+        if check_motion:
+            motion = MotionStore.latest(db, manifest.project_id, manifest.plan_id)
+            if (motion["id"] if motion else None) != (str(manifest.motion_revision) if manifest.motion_revision else None) or (
+                motion and hashlib.sha256(motion["payload"].encode()).hexdigest() != manifest.motion_fingerprint
+            ):
+                return "Camera motion changed. Generate and approve a new preview."
         issue = self.revision_issue(db, manifest.project_id, selected[1])
         if issue:
             return issue

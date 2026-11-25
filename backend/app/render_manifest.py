@@ -5,6 +5,8 @@ from uuid import UUID
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .brand import Brand
+from .motion_models import CameraSettings, Focus, MotionEvent
+from .motion_store import rules
 from .timeline import Span, Timeline
 
 FPS = 30
@@ -78,6 +80,13 @@ class RenderManifest(BaseModel):
     frame_ranges: list[FrameRange]
     emphasis: list[Span]
     zooms: list[Zoom] = Field(default_factory=list)
+    motion_revision: UUID | None = None
+    motion_fingerprint: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    camera: CameraSettings | None = None
+    motion_events: list[MotionEvent] = Field(default_factory=list, max_length=40)
+    face_track: list[tuple[int, Focus]] = Field(default_factory=list)
+    display_geometry: tuple[int, int] | None = None
+    face_version: UUID | None = None
     voice_leveling: bool
     notices: list[str]
 
@@ -103,7 +112,44 @@ class RenderManifest(BaseModel):
             previous = zoom.source.end_ms
         if len(self.edited_zooms()) != len(self.zooms):
             raise ValueError("An accepted zoom does not cover a complete retained frame.")
+        if self.camera:
+            cap = min(self.brand.max_zoom_percent,
+                      rules(self.playbook_revision, self.camera.energy == "energetic")[0])
+            if len({event.id for event in self.motion_events}) != len(self.motion_events):
+                raise ValueError("Camera event IDs must be unique.")
+            previous = 0
+            for event in sorted(self.motion_events, key=lambda item: item.source.start_ms):
+                source = event.source
+                if source.end_ms > self.source_duration_ms:
+                    raise ValueError("A camera event exceeds the original duration.")
+                if event.status == "rejected":
+                    continue
+                if max(event.start_zoom, event.end_zoom) > cap:
+                    raise ValueError(f"Camera events must respect the {cap}% brand and playbook limit.")
+                if event.status == "accepted":
+                    if source.start_ms < previous:
+                        raise ValueError("Accepted camera events cannot overlap.")
+                    if self.map_motion_span(source) is None:
+                        raise ValueError("A camera event crosses an edit seam or has no retained frames. Adjust the event to fit within one kept shot.")
+                    previous = source.end_ms
+            timestamps = [time for time, _ in self.face_track]
+            if timestamps != sorted(set(timestamps)) or any(not 0 <= time <= self.source_duration_ms for time in timestamps):
+                raise ValueError("Face-tracking timestamps must be ordered and within the original.")
+            if self.display_geometry and min(self.display_geometry) < 2:
+                raise ValueError("Invalid display dimensions.")
         return self
+
+    def map_motion_span(self, source):
+        if not any(span.start_ms <= source.start_ms < source.end_ms <= span.end_ms for span in self.retained):
+            return None
+        offset = 0
+        for keep in self.frame_ranges:
+            start = max(keep.start_frame, (source.start_ms * FPS + 999) // 1000)
+            end = min(keep.end_frame, source.end_ms * FPS // 1000)
+            if start < end:
+                return start - keep.start_frame + offset, end - keep.start_frame + offset
+            offset += keep.duration
+        return None
 
     def edited_zooms(self):
         mapped = []
@@ -120,10 +166,12 @@ class RenderManifest(BaseModel):
 
     @property
     def approval_fingerprint(self):
-        if self.caption_revision is None:
-            return self.plan_fingerprint
-        identity = f"{self.plan_fingerprint}:{self.caption_revision}:{self.caption_fingerprint}"
-        return hashlib.sha256(identity.encode()).hexdigest()
+        identity = self.plan_fingerprint
+        if self.caption_revision:
+            identity = hashlib.sha256(f"{identity}:{self.caption_revision}:{self.caption_fingerprint}".encode()).hexdigest()
+        if self.motion_revision:
+            identity = hashlib.sha256(f"{identity}:{self.motion_revision}:{self.motion_fingerprint}".encode()).hexdigest()
+        return identity
 
     @property
     def total_frames(self):

@@ -6,7 +6,9 @@
     "pause_preservation": "Keep breathing room around reflective phrases. Suggest cuts only for clearly redundant gaps.",
     "hook_handling": "Point to a recorded opening that names a relatable tension or small shift.",
     "caption_emphasis": "Highlight one grounded phrase at a time.",
-    "max_zooms_per_minute": 3, "b_roll": "Suggest simple images of everyday routines only if they clarify the message.",
+    "max_zooms_per_minute": 3,
+    "motion_max": 115, "motion_transition": "smooth",
+    "motion_guidance": "Aim for 2–4 gentle zooms per edited minute when useful. Preserve reflective space.", "b_roll": "Suggest simple images of everyday routines only if they clarify the message.",
     "transitions": "minimal", "target_style": "Premium cinematic life coaching with a practical spiritual tone"
   },
   {
@@ -16,7 +18,9 @@
     "pause_preservation": "Keep pauses that separate examples or steps.",
     "hook_handling": "Identify a recorded line stating the problem or result.",
     "caption_emphasis": "Highlight key terms and numbered steps.",
-    "max_zooms_per_minute": 5, "b_roll": "Suggest diagrams or concrete examples as optional ideas.",
+    "max_zooms_per_minute": 5,
+    "motion_max": 108, "motion_transition": "smooth",
+    "motion_guidance": "Use subtle emphasis on key concepts and stable framing through explanations.", "b_roll": "Suggest diagrams or concrete examples as optional ideas.",
     "transitions": "hard-cuts", "target_style": "Clear short-form explanatory video"
   },
   {
@@ -26,7 +30,9 @@
     "pause_preservation": "Keep pauses before revelations and after meaningful lines.",
     "hook_handling": "Recommend a recorded opening that creates curiosity while preserving context.",
     "caption_emphasis": "Highlight a turning point or concrete image.",
-    "max_zooms_per_minute": 4, "b_roll": "Suggest scene-setting imagery consistent with recorded details.",
+    "max_zooms_per_minute": 4,
+    "motion_max": 115, "motion_transition": "smooth",
+    "motion_guidance": "Use slow movement and reserve close-ups for turning points.", "b_roll": "Suggest scene-setting imagery consistent with recorded details.",
     "transitions": "minimal", "target_style": "Personal short-form narrative"
   },
   {
@@ -36,7 +42,9 @@
     "pause_preservation": "Keep brief pauses after proof or instructions.",
     "hook_handling": "Select a recorded line that states a defensible point.",
     "caption_emphasis": "Highlight a concrete claim or call to action.",
-    "max_zooms_per_minute": 4, "b_roll": "Suggest existing examples or illustrative evidence. Avoid invented evidence.",
+    "max_zooms_per_minute": 4,
+    "motion_max": 110, "motion_transition": "punch",
+    "motion_guidance": "Reserve restrained punch-ins for important statements.", "b_roll": "Suggest existing examples or illustrative evidence. Avoid invented evidence.",
     "transitions": "hard-cuts", "target_style": "Confident expert talking head"
   }
 ]

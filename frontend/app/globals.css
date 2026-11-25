@@ -169,3 +169,31 @@ video { background: #08090a; display: block; width: 100%; height: auto; max-heig
 .caption-editor label { display:block; font-size:12px; color:var(--muted); margin:6px 0; }
 .caption-editor textarea,.caption-editor select { display:block; width:100%; background:#101113; color:var(--text); border:1px solid var(--line); border-radius:5px; padding:5px; }
 .caption-editor button[aria-pressed=true] { color:#edc77c; border-color:#edc77c; }
+
+.motion-studio { min-width: 0; }
+.motion-previews { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 18px 0; }
+.motion-previews > div { min-width: 0; }
+.motion-previews h3, .motion-timeline-head h3 { margin: 0 0 8px; font-size: .9rem; }
+.motion-frame { position: relative; width: 100%; max-width: 245px; aspect-ratio: 9 / 16; overflow: hidden; background: #111013; border: 1px solid #39333e; border-radius: 9px; }
+.motion-frame video { width: 100%; height: 100%; display: block; object-fit: contain; }
+.motion-box { position: absolute; border: 1.5px solid #efc879; pointer-events: none; }
+.motion-box > span { position: absolute; top: 0; left: 0; background: #181219; color: #f9d994; font-size: .65rem; padding: 1px 4px; }
+.motion-scrub { display: grid; gap: 5px; color: #bfb8c4; font-size: .79rem; }
+.motion-scrub input { width: 100%; accent-color: #d7aa68; }
+.motion-controls, .motion-save { margin-top: 16px; padding: 14px 0; border-top: 1px solid #39333e; }
+.motion-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 9px; }
+.motion-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(125px, 1fr)); gap: 10px; }
+.motion-actions label, .motion-settings label { display: grid; gap: 5px; font-size: .78rem; color: #c9becd; }
+.motion-actions .motion-toggle { display: flex; align-items: center; min-height: 36px; }
+.motion-studio select, .motion-studio input[type=number] { min-width: 0; width: 100%; border: 1px solid #4d4051; border-radius: 7px; color: #f5e8ed; background: #211b26; padding: 6px 8px; height: 36px; }
+.motion-studio button { min-height: 36px; display: inline-flex; align-items: center; gap: 6px; }
+.motion-studio button[aria-pressed=true] { border-color: #efc879; color: #efc879; }
+.motion-timeline-head { display: flex; align-items: center; justify-content: space-between; margin: 18px 0 8px; }
+.motion-track { position: relative; height: 15px; overflow: hidden; background: #26212b; border-radius: 4px; }
+.motion-track span { position: absolute; height: 7px; top: 4px; min-width: 2px; border-radius: 2px; background: #9575ae; }
+.motion-track span[data-status=accepted] { background: #ddac65; }
+.motion-track span[data-status=rejected] { background: #675e69; }
+.motion-track i { position: absolute; width: 1px; height: 100%; background: #fff1d7; }
+.motion-events { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+.motion-event-details { padding: 10px; border: 1px solid #39333e; border-radius: 8px; }
+.motion-event-details .motion-actions { margin-top: 10px; }
