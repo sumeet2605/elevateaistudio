@@ -25,8 +25,10 @@ PRESET_ADJUSTMENTS = {
         "foreground_scale": 1.05, "foreground_x": .88, "foreground_y": .9, "foreground_exposure": .045,
         "foreground_midtone": .022, "foreground_temperature": .012, "foreground_tint": .003,
         "background_brightness": .018, "background_blur": 1.5,
+        "edge_treatment": "motion_stable",
     },
 }
+DEFAULT_STUDIO_PRESET = "mystical-cinematic@2"
 
 
 class StudioSettings(BaseModel):
@@ -41,6 +43,7 @@ class StudioSettings(BaseModel):
     spill: float = Field(default=.38,ge=0,le=1)
     refine: Literal["none","erode","expand"] = "none"
     feather: float = Field(default=.65,ge=0,le=3)
+    edge_treatment: Literal["legacy","motion_stable"] = "legacy"
     opacity: float = Field(default=1,ge=.35,le=1)
     foreground_scale: float = Field(default=1,ge=.55,le=1.10)
     foreground_x: float = Field(default=.5,ge=0,le=1)
@@ -76,14 +79,14 @@ class StudioSettings(BaseModel):
         return self
 
 
-def key_graph(nodes,input_label,settings,tag="studio",grade=""):
+def key_graph(nodes,input_label,settings,tag="studio",grade="",*,matte_only=False):
     rgb=f"[{tag}rgb]"
     matte=f"[{tag}matte]"
     filtered=f"[{tag}alpha]"
     foreground=f"[{tag}fore]"
     key="0x"+settings.key[1:]
-    nodes.append(f"{input_label}format=yuva444p,chromakey={key}:{settings.similarity:.4f}:{settings.blend:.4f}"
-                 f",split=2{rgb}[{tag}key]")
+    branches = f"[{tag}key]" if matte_only else f",split=2{rgb}[{tag}key]"
+    nodes.append(f"{input_label}format=yuva444p,chromakey={key}:{settings.similarity:.4f}:{settings.blend:.4f}{branches}")
     mask=f"[{tag}key]alphaextract"
     if settings.refine!="none":
         mask+=","+("erosion" if settings.refine=="erode" else "dilation")
@@ -91,9 +94,21 @@ def key_graph(nodes,input_label,settings,tag="studio",grade=""):
         mask+=f",gblur=sigma={settings.feather:.4f}"
     # Remove the faint alpha haze without contracting the silhouette by whole pixels.
     v2 = settings.preset == "mystical-cinematic@2"
-    alpha = "clip((val-10)*255/245,0,255)" if v2 else "val"
+    stable = settings.edge_treatment == "motion_stable"
+    alpha = ("clip((val-16)*255/239,0,255)" if stable else
+             "clip((val-10)*255/245,0,255)" if v2 else "val")
     mask+=f",lut=y='{alpha}*{settings.opacity:.4f}'"
-    nodes.append(mask+matte)
+    if stable:
+        current, window, median = (f"[{tag}{part}]" for part in ("current","window","median"))
+        nodes.append(f"{mask},split=2{current}{window}")
+        nodes.append(f"{window}tmedian=radius=1{median}")
+        # Suppress low-alpha pulses only. Large changes are likely moving edges.
+        nodes.append(f"{current}{median}lut2=c0='x-min(10,max(0,x-y))*"
+                     f"clip((192-x)/128,0,1)*clip((48-abs(x-y))/24,0,1)'{matte}")
+    else:
+        nodes.append(mask+matte)
+    if matte_only:
+        return matte
     color=f"{rgb}format=gbrp"
     if settings.spill and v2:
         color+=f",despill=type=green:mix=0.5:expand=0:green=-{settings.spill:.4f}:alpha=0"
@@ -135,10 +150,9 @@ def static_background(nodes,settings,width,height,fps,label):
 
 
 def studio_graph(nodes,raw,settings,asset,index,frames,*,width=1080,height=1920,fps=30,tone="",grade="",diagnostic="composite"):
-    fg=key_graph(nodes,raw,settings,grade=grade)
     if diagnostic=="matte":
-        nodes.append(f"{fg}alphaextract[studiomixed]")
-        return "[studiomixed]"
+        return key_graph(nodes,raw,settings,matte_only=True)
+    fg=key_graph(nodes,raw,settings,grade=grade)
     if diagnostic=="foreground":
         return fg
     sw=int(width*settings.foreground_scale)//2*2

@@ -78,19 +78,23 @@ def test_ffmpeg_key_matte_foreground_and_background_loop(studio,tmp_path):
         assert sample["duration"]==2
     check(client,"/assets",422,"POST",files={"file":("fake.png",b"invalid image")})
     preset = "mystical-cinematic@2"
-    assert check(client,root+"/studio").json()["preset_adjustments"][preset]["foreground_scale"] == 1.05
+    studio_state = check(client,root+"/studio").json()
+    assert studio_state["default_preset"] == preset
+    assert studio_state["preset_adjustments"][preset]["foreground_scale"] == 1.05
+    assert studio_state["preset_adjustments"][preset]["edge_treatment"] == "motion_stable"
     v2 = {**opts, **PRESET_ADJUSTMENTS[preset], "preset":preset,"foreground_sharpen":.12}
     assert check(client,root+"/studio/preview",200,"POST",json={"settings":v2,"duration":2}).json()["duration"] == 2
     sample = check(client,root+"/studio/preview",200,"POST",
                    json={"settings":v2,"mode":"matte","start_ms":1400,"duration":2}).json()
     mask = tmp_path/"v2-mask.mp4"
     mask.write_bytes(check(client,f"{root}/studio/preview/{sample['id']}.mp4").content)
-    raw = subprocess.check_output([FFMPEG,"-v","error","-i",str(mask),"-vf","format=gray",
-                                   "-frames:v","1","-f","rawvideo","-"])
-    matte = np.frombuffer(raw,dtype=np.uint8).reshape(640,360)
-    assert matte[320,82] > 230  # moving hand
-    assert matte[246,150] > 230  # subject core
-    assert matte[100,65] < 12   # backdrop
+    raw = subprocess.check_output([FFMPEG,"-v","error","-i",str(mask),"-vf","format=gray","-f","rawvideo","-"])
+    matte = np.frombuffer(raw,dtype=np.uint8).reshape(-1,640,360)
+    assert len(matte) == 38
+    assert matte[0,320,82] > 230   # hand at the first timestamp
+    assert matte[24,320,82] < 12   # hand has cleared without a trail
+    assert np.min(matte[:,246,150]) > 230
+    assert np.max(matte[:,100,65]) < 12
 
 
 @pytest.mark.parametrize("options",[

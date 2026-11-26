@@ -25,3 +25,5 @@ Day 11 adds an audio asset library, speech-aware ducking, effects, reviewed mix 
 Day 11.1 adds green-screen sampling, matte diagnostics, six Virtual Studio presets, immutable studio revisions and deterministic background composition.
 
 The Day 11.1 quality pass adds Mystical Cinematic V2, reviewable 100–110% foreground framing and one-pass still-plate preparation.
+
+The chosen Elevate default is Mystical Cinematic V2 at 105%. Its motion-stable matte is revisioned for comparison with the earlier treatment.

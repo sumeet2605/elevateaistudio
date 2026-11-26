@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from .asset_library import asset_model, asset_path, asset_row
-from .studio_key import PRESETS, PRESET_ADJUSTMENTS, StudioSettings, sample_key, studio_graph
+from .studio_key import DEFAULT_STUDIO_PRESET, PRESETS, PRESET_ADJUSTMENTS, StudioSettings, sample_key, studio_graph
 
 KINDS={"original","matte","foreground","black","white","composite"}
 MP4_INPUT=["-protocol_whitelist","file","-f","mov","-enable_drefs","0"]
@@ -108,7 +108,7 @@ def studio_routes(renders,settings):
                 "SELECT payload FROM studio_revisions WHERE project_id=? ORDER BY rowid DESC",(str(project_id),))]
             current=next((item for item in revisions if plan and item["plan_id"]==plan["id"]),None)
         return {"plan_id":plan["id"] if plan else None,"history":revisions,"current":current,"presets":PRESETS,
-                "preset_adjustments":PRESET_ADJUSTMENTS,
+                "preset_adjustments":PRESET_ADJUSTMENTS,"default_preset":DEFAULT_STUDIO_PRESET,
                 "suggestion":plan.get("studio_idea") if plan else None}
 
     @router.post("",status_code=201,max_body_size=8192)
@@ -167,7 +167,7 @@ def studio_routes(renders,settings):
         duration=min(body.duration,media["duration_seconds"]-start_ms/1000)
         with projects.connect() as db:
             asset,path=background(renders,project_id,opts,duration,db) if mode=="composite" else (None,None)
-        key=hashlib.sha256(json.dumps({"engine":2,"source":media["sha256"],"draft":body.model_dump(mode="json"),
+        key=hashlib.sha256(json.dumps({"engine":3,"source":media["sha256"],"draft":body.model_dump(mode="json"),
                                        "asset":asset.checksum if asset else None},sort_keys=True).encode()).hexdigest()
         folder=projects.media_dir(project_id)/"studio";folder.mkdir(exist_ok=True)
         extension="webm" if mode=="foreground" else "mp4"

@@ -7,6 +7,7 @@ import { api, request } from "./api";
 type Draft = {
   enabled:boolean; preset:string; mode:"solid"|"gradient"|"asset"; background_id:string|null; key:string;
   similarity:number; blend:number; spill:number; refine:"none"|"erode"|"expand"; feather:number; opacity:number;
+  edge_treatment:"legacy"|"motion_stable";
   foreground_scale:number; foreground_x:number; foreground_y:number; foreground_fit:"contain"|"cover";
   foreground_exposure:number; foreground_temperature:number; foreground_tint:number; foreground_contrast:number;
   foreground_midtone:number; foreground_sharpen:number;
@@ -14,8 +15,8 @@ type Draft = {
   background_brightness:number;background_contrast:number;background_saturation:number;background_temperature:number;
   background_color:string;background_end_color:string;offset_ms:number;loop:boolean;camera:"static"|"coordinated";
 };
-const defaults:Draft={enabled:false,preset:"mystical-cinematic@1",mode:"gradient",background_id:null,key:"#00B140",
-  similarity:.18,blend:.08,spill:.38,refine:"none",feather:.65,opacity:1,
+const defaults:Draft={enabled:false,preset:"mystical-cinematic@2",mode:"gradient",background_id:null,key:"#00B140",
+  similarity:.18,blend:.08,spill:.38,refine:"none",feather:.65,opacity:1,edge_treatment:"legacy",
   foreground_scale:1,foreground_x:.5,foreground_y:.5,foreground_fit:"contain",
   foreground_exposure:0,foreground_temperature:0,foreground_tint:0,foreground_contrast:1,
   foreground_midtone:0,foreground_sharpen:0,
@@ -28,7 +29,7 @@ type Library={items:Asset[]};
 type Revision={id:string;settings:Draft;speed:1|1.1;created_at:string};
 type Suggestion={enabled:boolean;preset:string;asset_id:string|null;placement:"center"|"left"|"right";blur:number;camera:"static"|"coordinated";rationale:string};
 type State={plan_id:string|null;presets:Record<string,[string,string,string]>;preset_adjustments:Record<string,Partial<Draft>>;
-  current:Revision|null;history:Revision[];suggestion?:Suggestion|null};
+  default_preset:string;current:Revision|null;history:Revision[];suggestion?:Suggestion|null};
 type Analysis={key?:string;detected:boolean;confidence:number;similarity?:number;blend?:number;analysis_seconds:number;warnings:string[]};
 type Sample={id:string;extension:"mp4"|"webm";seconds:number;cached:boolean};
 type Mode="original"|"matte"|"foreground"|"black"|"white"|"composite";
@@ -47,6 +48,14 @@ const controls = {
 } as const;
 const modes:Record<Mode,string>={original:"Original footage",matte:"Alpha matte",foreground:"Transparent foreground",
   black:"Foreground on black",white:"Foreground on white",composite:"Final composite"};
+
+function presetFields(state:State,preset:string,assets:Asset[]):Partial<Draft> {
+  const [,background_color,background_end_color]=state.presets[preset];
+  const name=preset.split("@")[0].replaceAll("-"," ");
+  const asset=assets.find(item=>item.name.toLowerCase().replaceAll("-"," ").includes(name));
+  return {...state.preset_adjustments[preset],preset,mode:asset?"asset":"gradient",
+    background_id:asset?.id??null,background_color,background_end_color};
+}
 
 export default function VirtualStudio({projectId,duration,position}:{projectId:string;duration:number;position:number}) {
   const root=`/projects/${projectId}/studio`;
@@ -71,8 +80,10 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
     let cancelled=false;
     Promise.all([request<State>(root),request<Library>("/assets")]).then(([next,library])=>{
       if(cancelled)return;
-      setState(next);setAssets(library.items.filter(asset=>asset.category==="Virtual Studio"));
-      setDraft({...defaults,...next.current?.settings});setSpeed(next.current?.speed??1);
+      const backgrounds=library.items.filter(asset=>asset.category==="Virtual Studio");
+      setState(next);setAssets(backgrounds);
+      setDraft({...defaults,...(next.current?.settings??presetFields(next,next.default_preset,backgrounds))});
+      setSpeed(next.current?.speed??1);
     }).catch(e=>{if(!cancelled)setError(e.message);});
     return()=>{cancelled=true;};
   },[root]);
@@ -82,16 +93,12 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
     try{await action();}catch(e){setError(e instanceof Error?e.message:String(e));}finally{setBusy(false);}
   }
   function loadPreset(preset:string) {
-    const colors=state?.presets[preset];
-    const name=preset.split("@")[0].replaceAll("-"," ");
-    const asset=assets.find(item=>item.name.toLowerCase().replaceAll("-"," ").includes(name));
-    const prior=Object.keys(state?.preset_adjustments?.[draft.preset]??{}) as (keyof Draft)[];
+    if(!state)return;
+    const prior=Object.keys(state.preset_adjustments[draft.preset]??{}) as (keyof Draft)[];
     const reset=Object.fromEntries(prior.map(key=>[key,defaults[key]]));
     const sameStudio=draft.preset.split("@")[0]===preset.split("@")[0]&&draft.mode==="asset";
-    const background= sameStudio ? draft.background_id : asset?.id;
-    update({...reset,...state?.preset_adjustments?.[preset],preset,enabled:preset!=="original@1",mode:background?"asset":"gradient",
-      background_id:background??null,
-      background_color:colors?.[1]??defaults.background_color,background_end_color:colors?.[2]??defaults.background_end_color});
+    update({...reset,...presetFields(state,preset,assets),
+      ...(sameStudio?{mode:"asset",background_id:draft.background_id}:{}),enabled:preset!=="original@1"});
   }
   function url(sample:Sample){return `${api}${root}/preview/${sample.id}.${sample.extension}`;}
   function pick(event:MouseEvent<HTMLVideoElement>){
@@ -144,13 +151,17 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
         <img src={`${api}/assets/${asset.id}/thumbnail`} alt=""/><strong>{asset.name}</strong>
         <p className="muted small">{asset.kind} · {asset.provenance.generated?"Generated studio plate":asset.provenance.creator??"Personal upload"} · {asset.usage.length} uses</p>
         <p className="muted small">{asset.provenance.license}</p>
-        <button className="secondary" onClick={()=>{update({background_id:asset.id,mode:"asset",enabled:true,preset:draft.preset==="original@1"?"mystical-cinematic@1":draft.preset});setTab("controls");}}>Use background</button>
+        <button className="secondary" onClick={()=>{update({
+          ...(state&&draft.preset==="original@1"?presetFields(state,state.default_preset,assets):{}),
+          background_id:asset.id,mode:"asset",enabled:true});setTab("controls");}}>Use background</button>
         <button className="secondary" onClick={()=>void perform(async()=>{const updated=await request<Asset>(`/assets/${asset.id}/favourite`,post({value:!asset.favourite}));
           setAssets(assets.map(a=>a.id===updated.id?{...a,...updated}:a));})}>{asset.favourite?"Remove favourite":"Favourite"}</button>
       </article>)}</div>
     </>:<>
       <div className="motion-settings visual-controls">
-        <label className="finish-toggle"><input type="checkbox" checked={draft.enabled} onChange={e=>update({enabled:e.target.checked,preset:draft.preset==="original@1"?"mystical-cinematic@1":draft.preset})}/> Replace background</label>
+        <label className="finish-toggle"><input type="checkbox" checked={draft.enabled} onChange={e=>update({
+          ...(state&&draft.preset==="original@1"?presetFields(state,state.default_preset,assets):{}),
+          enabled:e.target.checked})}/> Replace background</label>
         <label>Studio preset<select aria-label="Studio preset" value={draft.preset} onChange={e=>loadPreset(e.target.value)}>
           {Object.entries(state?.presets??{}).map(([key,[name]])=><option key={key} value={key}>{name}</option>)}</select></label>
         <label>Camera<select value={draft.camera} onChange={e=>update({camera:e.target.value as Draft["camera"]})}><option value="coordinated">Coordinated push-in</option><option value="static">Static</option></select></label>
@@ -158,7 +169,7 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
       {state?.suggestion&&<p className="muted small">{state.suggestion.rationale} <button className="secondary" onClick={()=>{
         const idea=state.suggestion!;
         const colors=state.presets[idea.preset];
-        update({...state.preset_adjustments?.[idea.preset],enabled:idea.enabled,preset:idea.enabled?idea.preset:"original@1",background_id:idea.asset_id,mode:idea.asset_id?"asset":"gradient",
+        update({edge_treatment:defaults.edge_treatment,...state.preset_adjustments[idea.preset],enabled:idea.enabled,preset:idea.enabled?idea.preset:"original@1",background_id:idea.asset_id,mode:idea.asset_id?"asset":"gradient",
           background_color:colors?.[1]??defaults.background_color,background_end_color:colors?.[2]??defaults.background_end_color,
           foreground_x:idea.placement==="left"?0:idea.placement==="right"?1:.5,
           foreground_scale:idea.placement==="center"?1:.82,background_blur:idea.blur,camera:idea.camera});
@@ -170,12 +181,14 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
           key:analysis.key,similarity:analysis.similarity,
           blend:draft.preset==="mystical-cinematic@2"?draft.blend:analysis.blend,
         })}>Use analysed key</button>}
-        <button className="secondary" onClick={()=>{setDraft(defaults);setResult(null);}}>Reset controls</button>
+        <button className="secondary" onClick={()=>{if(state)setDraft({...defaults,...presetFields(state,state.default_preset,assets)});setResult(null);}}>Reset controls</button>
       </div>
       {analysis&&<><p className="muted small">Border sampling indicator {(100*analysis.confidence).toFixed(0)}% · {analysis.analysis_seconds.toFixed(2)} s</p>
         {analysis.warnings.map(warning=><p className="muted small" key={warning}>{warning}</p>)}</>}
       <details open><summary>Key and matte</summary>
         <div className="motion-settings visual-controls"><label>Key colour<input type="color" value={draft.key} onChange={e=>update({key:e.target.value})}/></label>
+          <label>Edge treatment<select value={draft.edge_treatment} onChange={e=>update({edge_treatment:e.target.value as Draft["edge_treatment"]})}>
+            <option value="legacy">Original matte</option><option value="motion_stable">Motion-stable matte</option></select></label>
           <label>Matte refinement<select value={draft.refine} onChange={e=>update({refine:e.target.value as Draft["refine"]})}>
             <option value="none">None</option><option value="erode">Erode</option><option value="expand">Expand</option></select></label>
           <button className="secondary" disabled={!reference} onClick={()=>setPicker(!picker)}>{picker?"Click a green area":"Pick from original sample"}</button></div>

@@ -120,8 +120,12 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
                    if speed != 1 else "")
     # Convert the source's display aspect to square pixels before fitting or cropping.
     if not audio_pass and keyed:
-        nodes.append(f"{vout}settb=1/{FPS},setpts=N,scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,"
-                     f"{HDR_TO_SDR+',' if hdr else ''}format=yuv444p[studioraw]")
+        normalize = f"{vout}settb=1/{FPS},setpts=N,scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1"
+        if hdr:
+            normalize += "," + HDR_TO_SDR
+        if manifest.studio.edge_treatment == "legacy":
+            normalize += ",format=yuv444p"
+        nodes.append(normalize + "[studioraw]")
         label=studio_graph(nodes,"[studioraw]",manifest.studio,manifest.studio_asset,len(manifest.visuals)+1,
                            manifest.total_frames,tone=HDR_TO_SDR,grade=grade_filter(manifest.grade))
         treatment=zoom_filter if manifest.studio.camera=="coordinated" else ""
