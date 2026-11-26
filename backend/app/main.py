@@ -15,6 +15,7 @@ from .director_api import director_routes
 from .director_store import DirectorStore
 from .jobs import Jobs
 from .sound_store import sound_routes
+from .studio_store import studio_routes
 from .visual_store import visual_routes
 from .finish_store import finish_routes
 from .motion_store import motion_routes
@@ -125,6 +126,7 @@ def create_app(settings: Settings | None = None):
     app.include_router(finish_routes(renders))
     app.include_router(visual_routes(renders, settings))
     app.include_router(sound_routes(renders, settings))
+    app.include_router(studio_routes(renders, settings))
     return app
 
 

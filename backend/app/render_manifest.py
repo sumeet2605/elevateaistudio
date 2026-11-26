@@ -6,7 +6,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .brand import Brand
 from .sound_mix import Mix,BoundCue
-from .visuals import BoundVisual
+from .visuals import BoundVisual, VisualAsset
+from .studio_key import StudioSettings
 from .finishing import Grade, Voice
 from .motion_models import CameraSettings, Focus, MotionEvent
 from .motion_store import rules
@@ -103,6 +104,10 @@ class RenderManifest(BaseModel):
     mix_revision: UUID | None = None
     mix_fingerprint: str | None = None
     sound_cues: list[BoundCue] = Field(default_factory=list, max_length=9)
+    studio: StudioSettings | None = None
+    studio_revision: UUID | None = None
+    studio_fingerprint: str | None = Field(default=None,pattern=r"^[a-f0-9]{64}$")
+    studio_asset: VisualAsset | None = None
     voice_leveling: bool
     notices: list[str]
 
@@ -160,6 +165,13 @@ class RenderManifest(BaseModel):
                 or item.cue.end_ms > self.encoded_ms for item in self.sound_cues
             ):
                 raise ValueError("The pinned mix cues do not match the edited timeline.")
+        if self.studio and self.studio.enabled and self.studio.mode=="asset":
+            if not self.studio_asset or self.studio_asset.id != self.studio.background_id:
+                raise ValueError("The studio background is not pinned.")
+            asset=self.studio_asset
+            if asset.kind=="video" and (not asset.duration or self.studio.offset_ms/1000>=asset.duration or
+                (not self.studio.loop and asset.duration-self.studio.offset_ms/1000+.02<self.total_frames/FPS)):
+                raise ValueError("The pinned background is too short for the kept frames.")
         last = 0
         for visual in self.visuals:
             event, asset = visual.event, visual.asset
@@ -216,7 +228,8 @@ class RenderManifest(BaseModel):
         for revision, fingerprint in ((self.grade_revision, self.grade_fingerprint),
                                       (self.voice_revision, self.voice_fingerprint),
                                       (self.visual_revision, self.visual_fingerprint),
-                                      (self.mix_revision, self.mix_fingerprint)):
+                                      (self.mix_revision, self.mix_fingerprint),
+                                      (self.studio_revision,self.studio_fingerprint)):
             if revision:
                 identity = hashlib.sha256(f"{identity}:{revision}:{fingerprint}".encode()).hexdigest()
         return identity

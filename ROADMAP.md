@@ -21,3 +21,5 @@ Day 9 adds local Colour & Sound samples, adjustable finishing presets, pinned fi
 Day 10 adds transcript-linked visual recommendations, a reusable asset library, controlled provider adapters, deterministic graphic cards and reviewed full-screen cutaways. The mock-asset comparison awaits human review.
 
 Day 11 adds an audio asset library, speech-aware ducking, effects, reviewed mix revisions, loudness-matched samples and picture stream reuse. Production music selection and listening approval remain editorial decisions.
+
+Day 11.1 adds green-screen sampling, matte diagnostics, six Virtual Studio presets, immutable studio revisions and deterministic background composition.

@@ -234,3 +234,8 @@ video { background: #08090a; display: block; width: 100%; height: auto; max-heig
 .sound-library audio { width: 100%; }
 .sound-studio .motion-event-details { margin: 10px 0; }
 .sound-studio summary { cursor: pointer; color: #e8d9ec; }
+
+.virtual-studio summary { cursor: pointer; color: #edddea; }
+.virtual-studio details { margin: 12px 0; }
+.virtual-studio .virtual-picker { cursor: crosshair; }
+.virtual-studio input[type=color] { padding: 3px; min-width: 64px; }

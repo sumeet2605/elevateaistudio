@@ -9,6 +9,8 @@ from .finishing import grade_filter, loudnorm, speech_filter
 from .motion_render import baseline_crop, camera_zoom, tracked
 from .render_manifest import FPS, SAMPLE_RATE, RenderManifest
 from .visual_render import compose
+from .studio_key import studio_graph
+from .studio_store import background_input
 
 
 def streams(executable, path, *, allow_missing_audio=False):
@@ -34,7 +36,7 @@ HDR_TO_SDR = ("zscale=t=linear:npl=203,format=gbrpf32le,zscale=p=bt709,"
 
 
 def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index: int, audio_index: int, *,
-                color_transfer: str | None = None, color_info=None, measured=None, audio_pass=False, visual_paths=()):
+                color_transfer: str | None = None, color_info=None, measured=None, audio_pass=False, visual_paths=(), studio_path=None):
     if type(video_index) is not int or type(audio_index) is not int or min(video_index, audio_index) < 0:
         raise ValueError("Invalid source stream indices.")
     count = len(manifest.frame_ranges)
@@ -50,7 +52,8 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
              f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color={colour}")
     hdr = color_transfer in HDR_TRANSFERS
     tone = HDR_TO_SDR + "," if hdr else ""
-    managed = manifest.grade_revision or manifest.voice_revision or manifest.visual_revision or (manifest.mix and manifest.mix.active)
+    keyed = manifest.studio and manifest.studio.enabled
+    managed = keyed or manifest.grade_revision or manifest.voice_revision or manifest.visual_revision or (manifest.mix and manifest.mix.active)
     if not hdr and color_info and managed:
         matrix = {"bt470bg": "bt601", "smpte170m": "smpte170m", "bt2020nc": "bt2020", "bt709": "bt709"}
         options = f":in_color_matrix={matrix[color_info['color_space']]}" if color_info.get("color_space") in matrix else ""
@@ -116,9 +119,17 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
     video_speed = (f"settb=AVTB,setpts=PTS/{speed:g},fps={FPS},tpad=stop_mode=clone:stop=1,"
                    if speed != 1 else "")
     # Convert the source's display aspect to square pixels before fitting or cropping.
-    if not audio_pass:
+    if not audio_pass and keyed:
+        nodes.append(f"{vout}settb=1/{FPS},setpts=N,scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,"
+                     f"{HDR_TO_SDR+',' if hdr else ''}format=yuv444p[studioraw]")
+        label=studio_graph(nodes,"[studioraw]",manifest.studio,manifest.studio_asset,len(manifest.visuals)+1,
+                           manifest.total_frames,tone=HDR_TO_SDR,grade=grade_filter(manifest.grade))
+        treatment=zoom_filter if manifest.studio.camera=="coordinated" else ""
+        picture=f"{label}settb=1/{FPS},setpts=N,{treatment}{video_speed}"
+    elif not audio_pass:
         picture = (f"{vout}settb=1/{FPS},setpts=N,scale=w='max(2,trunc(iw*sar/2)*2)':h=ih,setsar=1,"
                    f"{framing},setsar=1,{zoom_filter}{video_speed}{grade_filter(manifest.grade)}")
+    if not audio_pass:
         if manifest.visuals:
             nodes.append(picture + f"settb=1/{FPS},setpts=N,format=yuv420p[program]")
             picture = compose(nodes, manifest, visual_paths, "[program]", HDR_TO_SDR)
@@ -146,6 +157,7 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
         *(arg for asset, path in zip(manifest.visuals, visual_paths, strict=True)
           for arg in (["-protocol_whitelist", "file", "-f", "mov", "-enable_drefs", "0", "-i", str(path)]
                       if asset.asset.kind == "video" else ["-protocol_whitelist", "file", "-i", str(path)])),
+        *(background_input(manifest.studio,manifest.studio_asset,studio_path) if keyed else []),
         "-filter_complex_threads", "2",
         "-filter_complex", ";".join(nodes), "-map", "[v]", "-map", "[a]",
         "-t", f"{manifest.output_frames / FPS:.6f}", "-c:v", "libx264", "-threads:v", "4", "-preset", preset,

@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from .director import DirectorPlan
 from .asset_library import initialize_visuals
+from .studio_store import init_studio,pinned_studio
 from .sound_store import asset_row as sound_asset_row, initialize_sound, pinned_sound, sound_path
 from .sound_mix import Rights
 from .finish_store import initialize as initialize_finish, pinned as pinned_finish
@@ -36,6 +37,7 @@ class Renders:
             initialize_finish(db)
             initialize_visuals(db)
             initialize_sound(db)
+            init_studio(db)
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS caption_revisions (
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
@@ -94,7 +96,7 @@ class Renders:
             return "The original source no longer matches this plan."
         return None
 
-    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True, include_motion=True, include_visuals=True, include_sound=True):
+    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True, include_motion=True, include_visuals=True, include_sound=True, include_studio=True):
         from .visual_store import latest as latest_visual, visual_manifest
         with self.projects.connect() as db:
             db.execute("BEGIN")
@@ -106,6 +108,7 @@ class Renders:
             caption = self.latest_caption(db, project_id, plan_id) if include_captions else None
             motion = MotionStore.latest(db, project_id, plan["id"]) if include_motion else None
             finishing = pinned_finish(db, project_id, plan["id"])
+            studio = pinned_studio(db,project_id,plan["id"]) if include_studio else {}
             sound = pinned_sound(db,project_id,plan["id"]) if include_sound else {}
             if sound:
                 mix = sound["mix"]
@@ -171,7 +174,7 @@ class Renders:
                 brand_revision=plan["brand_revision"], playbook_revision=plan["playbook_revision"],
                 brand=plan["brand"], settings=settings, source_duration_ms=plan["source_duration_ms"],
                 cuts=reviewed["approved_cuts"], retained=retained, frame_ranges=frame_spans(retained),
-                emphasis=highlights, **camera, **finishing, **visual, **sound, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
+                emphasis=highlights, **camera, **finishing, **visual, **sound, **studio, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
                 notices=notices,
             )
         except ValidationError as error:
@@ -200,7 +203,7 @@ class Renders:
             raise ValueError("The pinned caption revision changed or is missing.")
         return json.loads(row[0])
 
-    def stale(self, db, manifest, *, check_captions=True, check_motion=True, check_visuals=True, check_sound=True):
+    def stale(self, db, manifest, *, check_captions=True, check_motion=True, check_visuals=True, check_sound=True, check_studio=True):
         from .visual_store import latest as latest_visual, visual_manifest
         selected = self.selected(db, manifest.project_id, manifest.plan_id)
         if not selected or hashlib.sha256(selected[0].encode()).hexdigest() != manifest.plan_fingerprint:
@@ -225,6 +228,8 @@ class Renders:
                 getattr(manifest, f"{kind}_fingerprint") != finishing.get(f"{kind}_fingerprint")
             ):
                 return "Colour or sound changed. Generate and approve a new preview."
+        if check_studio and pinned_studio(db,manifest.project_id,manifest.plan_id).get("studio_fingerprint") != manifest.studio_fingerprint:
+            return "Virtual Studio changed. Generate and approve a new preview."
         if check_sound and pinned_sound(db,manifest.project_id,manifest.plan_id).get("mix_fingerprint") != manifest.mix_fingerprint:
             return "Sound mix changed. Generate and approve a new preview."
         if check_visuals:

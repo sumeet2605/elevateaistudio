@@ -83,7 +83,7 @@ def suggestions(renders, project, plan):
              and round(w.start*1000) < min(plan["source_duration_ms"],round(w.end*1000))]
     result = []
     proposals = plan.get("visual_ideas") or []
-    if not proposals and not plan["prompt_version"].startswith(("director-v4", "director-v5")):
+    if not proposals and not plan["prompt_version"].startswith(("director-v4", "director-v5", "director-v6")):
         for op in plan["operations"]:
             if op["kind"] != "b_roll" or op["status"] == "rejected":
                 continue
@@ -206,10 +206,14 @@ def visual_routes(renders, settings):
         with projects.connect() as db:
             rows = [json.loads(item[0]) for item in db.execute("SELECT payload FROM visual_assets ORDER BY rowid DESC")]
             revisions = [json.loads(item[0]) for item in db.execute("SELECT payload FROM visual_revisions")]
+            studios = [(item[0],json.loads(item[1])) for item in db.execute("SELECT project_id,payload FROM studio_revisions")]
         usage = {}
         for revision in revisions:
             for item in revision["approved"]:
                 usage.setdefault(item["asset"]["id"], []).append({"revision":revision["id"],"project_id":revision["project_id"]})
+        for project,revision in studios:
+            if revision["asset"]:
+                usage.setdefault(revision["asset"]["id"],[]).append({"revision":revision["id"],"project_id":project})
         needle = q.casefold().strip()
         return {"categories": CATEGORIES, "items": [{**row,"usage":usage.get(row["id"],[])} for row in rows
                 if (not favourite or row["favourite"]) and needle in " ".join(
@@ -217,11 +221,11 @@ def visual_routes(renders, settings):
 
     @router.post("/assets", status_code=201, max_body_size=settings.max_upload_bytes+65536)
     def upload(file: UploadFile = File(...), description: str = Form(""), category: str = Form("Abstract visuals"),
-               tags: str = Form("")):
-        if category not in CATEGORIES or len(description) > 400 or len(tags) > 500:
+               tags: str = Form(""), creator: str = Form(""), license: str = Form("")):
+        if category not in CATEGORIES or len(description) > 400 or len(tags) > 500 or len(creator)>150 or len(license)>400:
             raise HTTPException(422,"Check category, description and tags.")
         return store_asset(projects,settings,file.file,file.filename or "",description,category,
-                           [tag.strip()[:50] for tag in tags.split(",") if tag.strip()],{"provider":"personal"})
+                           [tag.strip()[:50] for tag in tags.split(",") if tag.strip()],{"provider":"personal","creator":creator.strip(),"license":license.strip()})
 
     @router.get("/assets/{asset_id}/{kind}")
     def media(asset_id: UUID, kind: Literal["thumbnail","media"]):

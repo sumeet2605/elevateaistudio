@@ -55,6 +55,11 @@ def render_video(settings, jobs, job, stage):
     stage("checking_source")
     if digest(source) != manifest.source_media_id:
         raise ValueError("The original no longer matches the approved plan.")
+    studio_path=None
+    if manifest.studio and manifest.studio.enabled and manifest.studio_asset:
+        studio_path=asset_path(store.projects,manifest.studio_asset)
+        if digest(studio_path)!=manifest.studio_asset.checksum:
+            raise ValueError("The pinned background checksum changed.")
     visual_paths = []
     for visual in manifest.visuals:
         path = asset_path(store.projects, visual.asset)
@@ -110,7 +115,7 @@ def render_video(settings, jobs, job, stage):
                                                  audio_pass=True), lambda: stage("measuring_audio", .02))
             voice_seconds = perf_counter() - started_voice
         args = ffmpeg_args(executable, source, manifest, video["index"], audio["index"],
-                           color_transfer=video.get("color_transfer"), color_info=video, measured=measured, visual_paths=visual_paths)
+                           color_transfer=video.get("color_transfer"), color_info=video, measured=measured, visual_paths=visual_paths, studio_path=studio_path)
         if carrier is None:
             run_ffmpeg(args, work, manifest.encoded_ms, lambda progress: stage("encoding_preview", progress))
         if active_mix:
@@ -143,7 +148,7 @@ def render_video(settings, jobs, job, stage):
                 verified_video["height"], verified_video["pix_fmt"]) != ("h264", "aac", 1080, 1920, "yuv420p"):
             raise ValueError("FFprobe found unexpected output codecs, dimensions, or pixel format.")
         hdr = video.get("color_transfer") in HDR_TRANSFERS
-        if (hdr or manifest.grade_revision or manifest.voice_revision or manifest.visual_revision or active_mix) and any(verified_video.get(field) != "bt709"
+        if (hdr or manifest.grade_revision or manifest.voice_revision or manifest.visual_revision or active_mix or (manifest.studio and manifest.studio.enabled)) and any(verified_video.get(field) != "bt709"
                        for field in ("color_transfer", "color_space", "color_primaries")):
             raise ValueError("FFprobe could not confirm the finished video is tagged BT.709 SDR.")
         if Fraction(verified_video["avg_frame_rate"]) != FPS:

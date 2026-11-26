@@ -121,6 +121,9 @@ class DirectorStore:
             has_sound = db.execute("SELECT 1 FROM sqlite_master WHERE name='sound_assets'").fetchone()
             sound_assets = [json.loads(row[0]) for row in db.execute(
                 "SELECT payload FROM sound_assets ORDER BY rowid DESC LIMIT 30")] if has_sound else []
+            from .studio_store import pinned_studio
+            has_studio = db.execute("SELECT 1 FROM sqlite_master WHERE name='studio_revisions'").fetchone()
+            studio_revision = pinned_studio(db,project_id,current_plan["id"]) if has_studio and current_plan else {}
             has_visual = db.execute("SELECT 1 FROM sqlite_master WHERE name='visual_assets'").fetchone()
             visual = latest_visual(db, project_id, current_plan["id"]) if has_visual and current_plan else None
             local = [json.loads(row[0]) for row in db.execute("SELECT payload FROM visual_assets ORDER BY rowid DESC LIMIT 30")] if has_visual else []
@@ -142,6 +145,9 @@ class DirectorStore:
         sound_duration = (round(sum(r["end_frame"]-r["start_frame"] for r in render_context["frame_ranges"])*1000/30/sound_speed)
                           if render_context and current_plan and render_context["plan_id"]==current_plan["id"] else
                           round(sum(span.duration for span in silence.retained_segments)/sound_speed))
+        studio_key = hashlib.sha256(f"studio-analysis-v1:{media['sha256']}".encode()).hexdigest()
+        studio_report=self.projects.media_dir(project_id)/"studio"/f"{studio_key}.json"
+        detected=json.loads(studio_report.read_text()) if studio_report.is_file() else {}
         context = {
             "context_id": str(uuid4()), "duration_ms": duration,
             "media": {key: media.get(key) for key in ("width", "height", "video_codec", "audio_codec")},
@@ -154,6 +160,9 @@ class DirectorStore:
             "eligible_cuts": eligible, "minimum_cut_ms": silence.detection.minimum_removable_ms,
             "brand": brand["settings"], "playbook": playbook.model_dump(),
             "brand_revision": brand["id"], "playbook_revision": f"{playbook.id}@{playbook.revision}",
+            "studio":{"detected":detected.get("detected",False),"confidence":detected.get("confidence"),
+                      "preference":studio_revision.get("studio",{}).get("preset"),
+                      "assets":[{key:row[key] for key in ("id","kind","category")} for row in local if row["category"]=="Virtual Studio"]},
             "sound":{"guidance":PLAYBOOK_SOUND[playbook_id],"duration_ms":min(sound_duration,1200000),
                      "assets":[{key:asset[key] for key in ("id","mood","kind","duration","genre")} for asset in sound_assets],
                      "voice_metrics":{key:audio.get("original",{}).get(key) for key in ("input_i","input_tp")},

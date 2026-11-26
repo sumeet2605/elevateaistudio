@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from .visuals import VisualAsset
 
 CATEGORIES = ("Meditation", "Journaling", "Fitness", "Nature", "Travel", "Family", "Coaching",
-              "Office and career", "Money and finance", "Abstract visuals")
+              "Office and career", "Money and finance", "Abstract visuals", "Virtual Studio")
 IMAGE_FORMAT = {".jpg": "mjpeg", ".jpeg": "mjpeg", ".png": "png", ".webp": "webp"}
 EXTENSIONS = {".mp4", ".mov", *IMAGE_FORMAT}
 
