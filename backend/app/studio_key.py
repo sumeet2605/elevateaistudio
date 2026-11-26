@@ -22,7 +22,7 @@ StudioPreset = Literal["original@1", "mystical-cinematic@1", "mystical-cinematic
 PRESET_ADJUSTMENTS = {
     "mystical-cinematic@2": {
         "similarity": .10, "blend": .036, "spill": .95, "refine": "none", "feather": .32,
-        "foreground_scale": 1.05, "foreground_y": .9, "foreground_exposure": .045,
+        "foreground_scale": 1.05, "foreground_x": .88, "foreground_y": .9, "foreground_exposure": .045,
         "foreground_midtone": .022, "foreground_temperature": .012, "foreground_tint": .003,
         "background_brightness": .018, "background_blur": 1.5,
     },
