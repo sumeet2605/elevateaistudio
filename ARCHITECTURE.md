@@ -75,6 +75,8 @@ Save the original, the transcript, and immutable plan and render revisions separ
 
 The caption workspace builds draft cues from the pinned transcript and frame-aligned retained ranges. Cue times are canonical edited milliseconds at 1×. Revised text, timings and emphasis live in immutable caption rows tied to the director revision, with the source and transcript identities and a before/after correction log. The active caption revision and its digest join the approval fingerprint. Caption changes stale prior approvals while keeping prior preview bytes accessible.
 
+Dynamic ASS layout wraps at the selected font size within the caption safe area. A cue that needs more than the allowed lines advances at timed word boundaries. Horizontal fitting remains available for an individual overlong word or when the word clock cannot support a separate page. A sound mix reuses rendered picture only when its burned-caption script matches the current script.
+
 The worker retimes the chosen revision to output speed before compiling ASS. Each cue or word-boundary event uses the same positioned line layout. HarfBuzz/libass shapes mixed scripts using bundled Noto faces. Animation is derived from cue time so an active-word update does not reset the fade or pulse. The HTML phone preview uses the original video and edited-to-source mapping with approximate CSS typography.
 
 ## Camera motion and local face analysis

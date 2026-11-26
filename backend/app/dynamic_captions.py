@@ -79,18 +79,47 @@ def normalized(word):
     return word.strip(".,?!।:;—…\"'“”‘’()[]{}").casefold()
 
 
-def wrapping(words, style):
-    max_width = 1080 * (100 - style.safe_left - style.safe_right) / 100 / style.font_size - 1
+def caption_width(style):
+    left, right = 1080 * style.safe_left // 100, 1080 * (100 - style.safe_right) // 100
+    return (right-left-2*(10+style.outline+style.shadow))/style.font_size
+
+
+def wrapping(words, max_width, max_lines=None):
     lines = [[]]
     size = 0
     for index, word in enumerate(words):
         w = width(word.text)
-        if size + 0.35 + w > max_width and lines[-1] and len(lines) < style.max_lines:
+        if size + (0.35 if lines[-1] else 0) + w > max_width and lines[-1] and (
+                max_lines is None or len(lines) < max_lines):
             lines.append([])
             size = 0
         lines[-1].append((index, word))
-        size += w + 0.35
-    return lines, max_width
+        size += w + (0.35 if len(lines[-1]) > 1 else 0)
+    return lines
+
+
+def caption_pages(cue, style, max_width):
+    """Reflow at the requested font size, then advance pages on spoken boundaries."""
+    lines = wrapping(cue.words, max_width)
+    if len(lines) <= style.max_lines:
+        yield cue, lines
+        return
+    # Fill the last page first so the end of the phrase can stay together.
+    first_count = (len(lines)-1) % style.max_lines + 1
+    pages = [lines[:first_count]]
+    pages.extend(lines[i:i+style.max_lines] for i in range(first_count,len(lines),style.max_lines))
+    starts = [cue.start_ms] + [page[0][0][1].start_ms for page in pages[1:]]
+    stops = starts[1:] + [cue.end_ms]
+    if (any(end//10 <= start//10 for start,end in zip(starts,stops))
+            or any(max(word.end_ms for line in page for _,word in line)>end
+                   for page,end in zip(pages,stops))):
+        # Simultaneous words have no usable page boundary at ASS precision.
+        yield cue, wrapping(cue.words,max_width,style.max_lines)
+        return
+    for page,start,end in zip(pages,starts,stops):
+        words = [word for line in page for _,word in line]
+        timed = cue.model_copy(update={"start_ms":start,"end_ms":end,"words":words})
+        yield timed, wrapping(words,max_width,style.max_lines)
 
 
 def retime_cues(cues, speed, duration_ms):
@@ -167,8 +196,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     left, right = 1080 * style.safe_left // 100, 1080 * (100 - style.safe_right) // 100
     an, x = {"left": (1, left + 10), "center": (2, (left+right)//2), "right": (3, right - 10)}[style.alignment]
     baseline = style.vertical * 1920 // 100
-    for cue in cues:
-        lines, max_width = wrapping(cue.words, style)
+    max_width = caption_width(style)
+    for cue, lines in (page for cue in cues for page in caption_pages(cue,style,max_width)):
         for start, end in events_for(cue, style.mode):
             if end <= start:
                 continue

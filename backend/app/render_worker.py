@@ -7,7 +7,7 @@ from time import perf_counter
 
 from .asset_library import asset_path
 from .captions import ass_asset, captions_for
-from .dynamic_captions import CaptionStyle, Cue, dynamic_ass, retime_cues, wrapping
+from .dynamic_captions import CaptionStyle, Cue, caption_pages, caption_width, dynamic_ass, retime_cues
 from .ffmpeg_render import HDR_TRANSFERS, ffmpeg_args, run_ffmpeg, streams
 from .finishing import loudness_pass, measure_audio
 from .render_manifest import FPS
@@ -105,7 +105,7 @@ def render_video(settings, jobs, job, stage):
         measured = None
         voice_seconds = None
         active_mix = manifest.mix and manifest.mix.active
-        carrier = carrier_for(store,manifest) if active_mix else None
+        carrier = carrier_for(store,manifest,caption_asset=asset) if active_mix else None
         cached_picture = carrier is not None
         mix_details = None
         if not carrier and manifest.voice and manifest.voice.enabled:
@@ -162,6 +162,11 @@ def render_video(settings, jobs, job, stage):
         if (not active_mix and manifest.voice and manifest.voice.enabled and output_audio and output_audio.get("input_tp") is not None
                 and output_audio["input_tp"] > manifest.voice.peak + .05):
             raise ValueError("Encoded audio exceeded the requested true-peak ceiling. Lower the target loudness and render again.")
+        caption_samples = (
+            [(page.start_ms, [[word for _,word in line] for line in lines])
+             for cue in cues[:3] for page,lines in caption_pages(cue,style,caption_width(style))]
+            if style else [(cue.start_ms,cue.lines) for cue in cues[:3]]
+        )
         metadata = {
             "sound_mix":mix_details,"video_stream_reused":cached_picture,
             "output_audio": output_audio, "audio_analysis_seconds": voice_seconds,
@@ -173,10 +178,9 @@ def render_video(settings, jobs, job, stage):
             "omitted_words": omitted, "caption_generation_seconds": caption_seconds,
             "camera_notice": camera_notice(manifest, video),
             "ass_events": asset.count("\nDialogue:"), "approval_fingerprint": manifest.approval_fingerprint,
-            "caption_sample": [{"time_ms": cue.start_ms, "lines": [[
+            "caption_sample": [{"time_ms": start, "lines": [[
                 {"text": word.text, "highlighted": word.highlighted} for word in line
-            ] for line in ([ [word for _, word in line] for line in wrapping(cue.words, style)[0] ]
-                         if style else cue.lines)]} for cue in cues[:3]],
+            ] for line in lines]} for start,lines in caption_samples[:3]],
         }
         (work / "metadata.json").write_text(json.dumps(metadata, ensure_ascii=False, indent=2), encoding="utf-8")
         shutil.rmtree(work / "fonts")

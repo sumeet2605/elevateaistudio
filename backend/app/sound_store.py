@@ -174,7 +174,7 @@ def bind(db,projects,mix,duration):
     return bound
 
 
-def carrier_for(store,manifest):
+def carrier_for(store,manifest,*,caption_asset=None):
     """Reuse only a verified voice-only render of the same full visual and voice manifest."""
     from .render_store import digest
     target=manifest.model_dump(exclude=MIX_KEYS)
@@ -189,7 +189,11 @@ def carrier_for(store,manifest):
             continue
         try:
             path=store.files(manifest.project_id,row["id"],"preview.mp4")
-        except HTTPException:
+            if caption_asset is not None:
+                captions=store.files(manifest.project_id,row["id"],"captions.ass")
+                if captions.read_text(encoding="utf-8") != caption_asset:
+                    continue
+        except (HTTPException,OSError):
             continue
         metadata=json.loads(row["metadata"])
         if metadata.get("color_transfer")=="bt709" and digest(path)==metadata["sha256"]:

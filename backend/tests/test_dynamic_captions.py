@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.caption_api import DEFAULT, PRESETS
-from app.dynamic_captions import CaptionStyle, Cue, TimedWord, dynamic_ass, retime_cues
+from app.dynamic_captions import CaptionStyle, Cue, TimedWord, caption_pages, caption_width, dynamic_ass, retime_cues
 from app.render_store import Renders
 from test_render import FFMPEG, prepared
 from test_transcription import studio
@@ -43,6 +43,21 @@ def test_active_word_keeps_fixed_layout_and_reveal_escapes_text():
     assert r"\t(0,140," in faded
     faster = retime_cues([cue], 1.1, 890)[0]
     assert faster.end_ms == 890 and faster.words[1].start_ms == int(cue.words[1].start_ms / 1.1)
+
+
+def test_reflows_long_cue_before_reducing_font_size():
+    style = CaptionStyle(font_size=88, safe_left=9, safe_right=15, vertical=77,
+                         safe_bottom=20, animation="none")
+    cue = line("an", "uncomfortable", "question.", end=1200)
+    pages = list(caption_pages(cue, style, caption_width(style)))
+    assert [(page.start_ms, page.end_ms) for page, _ in pages] == [(0, 400), (400, 1200)]
+    assert [[word.text for _, word in row] for row in pages[-1][1]] == [
+        ["uncomfortable"], ["question."],
+    ]
+    rows = [row for row in dynamic_ass(style, [cue]).splitlines() if row.startswith("Dialogue:")]
+    assert len(rows) == 3
+    assert all(r"\fscx100" in row for row in rows)
+    assert len({row.split(r"\pos")[1].split(")")[0] for row in rows[1:]}) == 2
 
 
 def test_mixed_script_complex_shaping(tmp_path):
