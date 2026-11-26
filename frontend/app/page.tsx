@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, request } from "./api";
 import Transcription from "./transcription";
 import SilenceDetection from "./silence";
+import RetakeReview from "./retakes";
 
 import BrandKit from "./brand-kit";
 import DirectorStudio from "./director-studio";
@@ -18,7 +19,7 @@ import FinishStudio from "./finish-studio";
 import MotionStudio from "./motion-studio";
 import RenderStudio from "./render-studio";
 
-const tabs = ["source", "transcription", "silence", "brand", "director", "captions", "motion", "finish", "visual", "sound", "virtual", "render"] as const;
+const tabs = ["source", "transcription", "silence", "retake", "brand", "director", "captions", "motion", "finish", "visual", "sound", "virtual", "render"] as const;
 type Tab = typeof tabs[number];
 const number = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
 
@@ -192,6 +193,8 @@ export default function Studio() {
               tabIndex={tab === "transcription" ? 0 : -1} onClick={() => selectTab("transcription")}>Transcription</button>
             <button id="silence-tab" role="tab" aria-selected={tab === "silence"} aria-controls="silence-panel"
               tabIndex={tab === "silence" ? 0 : -1} onClick={() => selectTab("silence")}>Silence Detection</button>
+            <button id="retake-tab" role="tab" aria-selected={tab === "retake"} aria-controls="retake-panel"
+              tabIndex={tab === "retake" ? 0 : -1} onClick={() => selectTab("retake")}>Retake Review</button>
             <button id="brand-tab" role="tab" aria-selected={tab === "brand"} aria-controls="brand-panel"
               tabIndex={tab === "brand" ? 0 : -1} onClick={() => selectTab("brand")}>Brand Kit</button>
             <button id="director-tab" role="tab" aria-selected={tab === "director"} aria-controls="director-panel"
@@ -248,6 +251,15 @@ export default function Studio() {
             seek={seek} />}
           {media && active && tab === "silence" && <SilenceDetection key={active.id} projectId={active.id}
             hasAudio={!!media.audio_codec} ready={videoReady} position={position} seek={seek} />}
+          {media && active && tab === "retake" && <RetakeReview key={active.id} projectId={active.id} play={span=>{
+            const source=video.current;
+            if(!source)return;
+            seek(span.start_ms/1000);
+            const stop=()=>{if(source.currentTime>=span.end_ms/1000){source.pause();source.removeEventListener("timeupdate",stop);}};
+            source.addEventListener("timeupdate",stop);
+            source.addEventListener("pause",()=>source.removeEventListener("timeupdate",stop),{once:true});
+            void source.play().catch(()=>source.removeEventListener("timeupdate",stop));
+          }}/>}
           {active && tab === "brand" && <BrandKit key={active.id} projectId={active.id}/>}
           {active && tab === "director" && <DirectorStudio key={active.id} projectId={active.id} ready={videoReady} position={position} seek={seek}/>}
           {active && tab === "captions" && <CaptionsStudio key={active.id} projectId={active.id} sourceUrl={api + mediaEndpoint} seek={seek}/>}

@@ -27,3 +27,5 @@ Day 11.1 adds green-screen sampling, matte diagnostics, six Virtual Studio prese
 The Day 11.1 quality pass adds Mystical Cinematic V2, reviewable 100–110% foreground framing and one-pass still-plate preparation.
 
 The chosen Elevate default is Mystical Cinematic V2 at 105%. Its motion-stable matte is revisioned for comparison with the earlier treatment.
+
+Day 12 adds local, review-only retake detection, side-by-side listening, short FFmpeg join previews and immutable retake decisions. The synthetic benchmark is available. Real-speaker tuning, holdout evaluation and human correction timing remain pending.

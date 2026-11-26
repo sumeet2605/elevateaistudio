@@ -192,3 +192,9 @@ Review the matte, transparent foreground, black and white checks, and the final 
 Choose a library plate, solid colour, or gradient placeholder. Virtual Studio uses the shared asset library for JPEG, PNG, WebP, MP4 and MOV. Six versioned studio styles and Original Background are available. Presets use matching named plates already in the library and can fall back to visibly labelled gradients. Video plates require enough footage or explicit looping. Loop cuts use the source boundary. Save a studio revision, then render and review the actual full MP4 before approval.
 
 **Mystical Cinematic V2** is the default for new Virtual Studio drafts. It starts at 105% foreground scale, with mild exposure, midtone and warmth adjustments and the motion-stable matte. The **Edge treatment** control lets you compare it with the original matte. Background replacement activates when you enable it. At scales above 100%, the position controls choose which part of the enlarged foreground to keep. Review the hairline, fingertips and caption area before approving a new preview.
+
+## Retake Review
+
+After transcribing and running **Silence Detection**, open **Retake Review** and select **Find retakes**. The local worker compares nearby word sequences and shows a reason and a heuristic confidence label. Play both attempts from the immutable original. The default decision is **Keep both**. To remove one attempt, choose which to keep, listen to **Play proposed join**, adjust the source boundaries if needed, and select **Accept**. Cuts that touch protected neighbouring words or unaccounted-for speech are blocked.
+
+Review history restores an earlier decision as a new revision. After changing decisions, generate and review a fresh AI Director draft before rendering. The render still requires its own approval. The short join is a timing and sound proxy with FFmpeg fades. Review the actual rendered MP4 for finishing, captions and export.

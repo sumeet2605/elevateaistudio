@@ -86,6 +86,8 @@ class DirectorPlan(BaseModel):
     source_duration_ms: int = Field(gt=0)
     transcript_revision: UUID
     silence_plan_revision: UUID
+    retake_revision: UUID | None = None
+    locked_story_cuts: list[Span] = Field(default_factory=list)
     silence_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     brand_revision: str
     playbook_revision: str

@@ -8,6 +8,7 @@ from uuid import UUID
 
 from fastapi import HTTPException
 
+from .retake_store import RETAKE, Retakes
 from .analysis_store import ANALYSIS, AnalysisStore
 from .analysis_worker import analyse
 from .audio import AudioError, extract_audio
@@ -67,6 +68,9 @@ class Worker:
                 return
             if job["type"] == DIRECTOR:
                 direct(self.jobs, job, stage)
+                return
+            if job["type"] == RETAKE:
+                Retakes(self.jobs).process(job, stage)
                 return
             if job["type"] == ANALYSIS:
                 analyse(self.settings, self.jobs, job, stage)
@@ -146,6 +150,7 @@ def main():
     AnalysisStore(jobs).initialize()
     DirectorStore(jobs).initialize()
     Renders(jobs).initialize()
+    Retakes(jobs).initialize()
     engine = FasterWhisper(TranscriptionSettings.from_env(settings.data_dir))
     worker = Worker(settings, jobs, engine)
     for event in (signal.SIGTERM, signal.SIGINT):

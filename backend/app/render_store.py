@@ -80,7 +80,7 @@ class Renders:
 
     def revision_issue(self, db, project_id, plan):
         if DirectorStore(self.jobs).stale(db, project_id, plan):
-            return "Silence decisions changed. Generate and review a fresh director plan."
+            return "Silence or retake decisions changed. Generate and review a fresh director plan."
         transcript = db.execute("SELECT job_id FROM transcripts WHERE project_id=? ORDER BY rowid DESC LIMIT 1",
                                 (str(project_id),)).fetchone()
         if not transcript or transcript[0] != str(plan["transcript_revision"]):
@@ -128,7 +128,8 @@ class Renders:
             reviewed = reviewed_plan(plan)
         except ValueError as error:
             raise HTTPException(422, "The selected director plan failed render validation.") from error
-        if plan["event"] == "generation" or (plan["operations"] and not any(
+        retake_only = bool(plan.get("retake_revision") and plan["base_approved_cuts"] and not plan["operations"])
+        if (plan["event"] == "generation" and not retake_only) or (plan["operations"] and not any(
                 op["status"] in ("accepted", "rejected") for op in plan["operations"])):
             raise HTTPException(409, "Review at least one director recommendation before rendering.")
         notices = (["The saved caption revision uses bundled Noto Sans and Noto Sans Devanagari."] if caption

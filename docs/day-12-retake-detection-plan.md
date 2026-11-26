@@ -29,3 +29,9 @@ Add a section beside Suggested Cuts with two listen buttons, readable reasons an
 ## Controlled Hinglish follow-on
 
 Use an owned code-switch recording with manually verified spoken words and source timestamps. Label Devanagari Hindi, Roman Hindi as a separately reviewed display option, and existing English segments. Keep translation a separate cue-level mapping. Record Hindi/English WER and Devanagari CER after declared canonicalization, per-word start/end absolute error, mixed-script cue line fit and reading rate, missing glyphs and false highlights. Present the same media, original-timed ASS and one script-aware layout variant to a bilingual reviewer. Keep sentence danda, vowel signs, nukta, punctuation, code switches, and any word merges explicitly tested. Record read-through and manual correction time. Local models, bundled OFL fonts and deterministic renderer are enough for the initial benchmark.
+
+## Day 12 implementation and synthetic baseline
+
+The local worker now stores pinned retake analyses and the workspace provides side-by-side playback, a short FFmpeg join preview, an explicit keep decision and immutable restore history. The Director pins accepted retake cuts alongside the existing reviewed base. A new decision makes final export stale while historical previews remain readable.
+
+The synthetic benchmark used eleven labelled scenarios with eight earlier-take starts. It compared a speech-protecting silence-only workflow, the audited adjacent exact rule and the hybrid detector. The exact rule found five starts with one deliberate-refrain flag. The hybrid found eight starts with the same refrain flagged as ambiguous. A separate locally synthesized MP4 demonstrated a real short A/V join and retained the surrounding words. The synthetic holdout contains one high-confidence match. Natural-speaker precision, actual ASR boundary error, and human correction and review times require the consented benchmark described above.

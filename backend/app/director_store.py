@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from fastapi import HTTPException
 
 from .analysis_store import AnalysisStore
+from .retake_store import current_review
 from .brand import Brand
 from .director import PLAYBOOKS, PROMPT_VERSION, DirectorError, DirectorPlan, DirectorSettings, request_body, usage_record
 from .render_manifest import FPS
@@ -132,6 +133,17 @@ class DirectorStore:
                              if has_visual else None)
             face = MotionStore.face(db, project_id) if has_motion else None
             motion = MotionStore.latest(db, project_id, current_plan["id"]) if has_motion and current_plan else None
+            retake = current_review(db, project_id)
+        if retake and retake["accepted_cuts"] and retake["transcript_revision"] != transcript_id:
+            raise HTTPException(409, "Restore or clear the old retake review before directing a different transcript.")
+        retake_cuts = [Span.model_validate(span) for span in retake["accepted_cuts"]] if retake else []
+        locked = (current_plan.get("locked_story_cuts", []) if current_plan and current_plan.get("source_media_id")==media["sha256"] else [])
+        if retake and current_plan and current_plan.get("source_media_id")==media["sha256"]:
+            locked = [*locked, *[{"start_ms": op["start_ms"], "end_ms": op["end_ms"]}
+                                 for op in current_plan["operations"] if op["kind"]=="cut" and op["status"]=="accepted"]]
+        locked = merge_spans([Span.model_validate(span) for span in locked],duration)
+        approved = merge_spans(silence.approved_cuts + retake_cuts + locked, duration)
+        retained = Timeline.from_cuts(duration, approved).retained
         saved = json.loads(motion["payload"]) if motion else {}
         current_cuts = ([{"start_ms": op["start_ms"], "end_ms": op["end_ms"]}
                          for op in current_plan["operations"] if op["kind"] == "cut" and op["status"] == "accepted"]
@@ -154,9 +166,9 @@ class DirectorStore:
             "language": transcript.language, "words": words,
             "transcript_segments": [{"start_ms": round(item.start * 1000), "end_ms": min(duration, round(item.end * 1000)),
                                      "text": item.text} for item in transcript.segments if not item.words],
-            "approved_cuts": [span.model_dump() for span in silence.approved_cuts],
+            "approved_cuts": [span.model_dump() for span in approved],
             "rejected_ranges": [cut.source.model_dump() for cut in silence.proposed_cuts if cut.status == "rejected"],
-            "retained_segments": [span.model_dump() for span in silence.retained_segments],
+            "retained_segments": [span.model_dump() for span in retained],
             "eligible_cuts": eligible, "minimum_cut_ms": silence.detection.minimum_removable_ms,
             "brand": brand["settings"], "playbook": playbook.model_dump(),
             "brand_revision": brand["id"], "playbook_revision": f"{playbook.id}@{playbook.revision}",
@@ -190,7 +202,8 @@ class DirectorStore:
                 "silence_plan_revision": str(silence.id),
                 "silence_snapshot_sha256": hashlib.sha256(row["payload"].encode()).hexdigest(),
                 "brand_revision": brand["id"], "playbook_revision": f"{playbook.id}@{playbook.revision}",
-                "prompt_version": PROMPT_VERSION}
+                "prompt_version": PROMPT_VERSION, "retake_revision": retake["id"] if retake else None,
+                "locked_story_cuts": [span.model_dump() for span in locked]}
         snapshot = cfg.snapshot()
         size = len(json.dumps(request_body(snapshot, context), ensure_ascii=False).encode())
         if size > 100_000:
@@ -269,7 +282,9 @@ class DirectorStore:
 
     def stale(self, db, project_id, plan):
         latest = AnalysisStore(self.jobs).latest_row(db, project_id)
-        return latest is None or hashlib.sha256(latest["payload"].encode()).hexdigest() != plan["silence_snapshot_sha256"]
+        retake = current_review(db, project_id)
+        return (latest is None or hashlib.sha256(latest["payload"].encode()).hexdigest() != plan["silence_snapshot_sha256"]
+                or (retake["id"] if retake else None) != plan.get("retake_revision"))
 
     def history(self, project_id):
         self.projects.get(project_id)
@@ -290,7 +305,7 @@ class DirectorStore:
             reviewing = index is not None or manual_cut is not None
             if reviewing:
                 if self.stale(db, project_id, plan):
-                    raise HTTPException(409, "Silence decisions changed. Generate a new director draft.")
+                    raise HTTPException(409, "Silence or retake decisions changed. Generate a new director draft.")
                 current = db.execute("SELECT plan_id FROM director_current WHERE project_id=?",
                                      (str(project_id),)).fetchone()
                 if current[0] != str(plan_id):

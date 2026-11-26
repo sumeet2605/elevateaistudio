@@ -239,3 +239,12 @@ video { background: #08090a; display: block; width: 100%; height: auto; max-heig
 .virtual-studio details { margin: 12px 0; }
 .virtual-studio .virtual-picker { cursor: crosshair; }
 .virtual-studio input[type=color] { padding: 3px; min-width: 64px; }
+
+.retake-panel { min-width: 0; }
+.retake-card { border: 1px solid var(--border, #363541); border-radius: 12px; padding: 14px; margin-block: 12px; }
+.retake-status { text-transform: capitalize; margin-bottom: 12px; }
+.retake-attempts { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.retake-attempts section { background: #191822; padding: 12px; border-radius: 8px; overflow-wrap: anywhere; }
+.retake-card video { width: min(100%, 300px); display: block; margin-top: 12px; }
+.retake-panel input[type=number] { max-width: 100px; }
+@media(max-width: 550px) { .retake-attempts { grid-template-columns: 1fr; } }

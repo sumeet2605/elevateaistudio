@@ -21,6 +21,8 @@ from .finish_store import finish_routes
 from .motion_store import motion_routes
 from .media import ingest
 from .projects import ProjectInput, ProjectNotFound, Projects, SourceExists
+from .retake_api import retake_routes
+from .retake_store import Retakes
 from .render_api import render_routes
 from .render_store import Renders
 from .transcription_api import transcription_routes
@@ -35,6 +37,7 @@ def create_app(settings: Settings | None = None):
     analyses = AnalysisStore(jobs)
     director = DirectorStore(jobs)
     renders = Renders(jobs)
+    retakes = Retakes(jobs)
 
     @asynccontextmanager
     async def lifespan(_app):
@@ -43,6 +46,7 @@ def create_app(settings: Settings | None = None):
         analyses.initialize()
         director.initialize()
         renders.initialize()
+        retakes.initialize()
         yield
 
     app = FastAPI(title="Elevate AI Studio", lifespan=lifespan)
@@ -119,6 +123,7 @@ def create_app(settings: Settings | None = None):
 
     app.include_router(transcription_routes(projects, jobs))
     app.include_router(analysis_routes(analyses))
+    app.include_router(retake_routes(retakes, settings))
     app.include_router(director_routes(director))
     app.include_router(render_routes(renders))
     app.include_router(caption_routes(renders))
