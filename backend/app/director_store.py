@@ -72,6 +72,7 @@ class DirectorStore:
 
     def inputs(self, project_id, playbook_id):
         from .visual_store import GUIDANCE, latest as latest_visual
+        from .sound_store import PLAYBOOK_SOUND
         from .motion_store import MotionStore, rules, suggested_events
         cfg = DirectorSettings.from_env()
         if cfg.mode not in ("openai", "mock"):
@@ -117,6 +118,9 @@ class DirectorStore:
             current = db.execute("""SELECT p.payload FROM director_current c JOIN director_plans p ON p.id=c.plan_id
                                    WHERE c.project_id=?""", (str(project_id),)).fetchone()
             current_plan = json.loads(current[0]) if current else None
+            has_sound = db.execute("SELECT 1 FROM sqlite_master WHERE name='sound_assets'").fetchone()
+            sound_assets = [json.loads(row[0]) for row in db.execute(
+                "SELECT payload FROM sound_assets ORDER BY rowid DESC LIMIT 30")] if has_sound else []
             has_visual = db.execute("SELECT 1 FROM sqlite_master WHERE name='visual_assets'").fetchone()
             visual = latest_visual(db, project_id, current_plan["id"]) if has_visual and current_plan else None
             local = [json.loads(row[0]) for row in db.execute("SELECT payload FROM visual_assets ORDER BY rowid DESC LIMIT 30")] if has_visual else []
@@ -133,6 +137,11 @@ class DirectorStore:
         maximum, transition, style = rules(playbook_id, energetic)
         measured = json.loads(finish_row[0]) if finish_row else {}
         audio = measured.get("audio") or {}
+        render_context = json.loads(public_render[0]) if public_render else {}
+        sound_speed = render_context.get("settings",{}).get("playback_speed",1)
+        sound_duration = (round(sum(r["end_frame"]-r["start_frame"] for r in render_context["frame_ranges"])*1000/30/sound_speed)
+                          if render_context and current_plan and render_context["plan_id"]==current_plan["id"] else
+                          round(sum(span.duration for span in silence.retained_segments)/sound_speed))
         context = {
             "context_id": str(uuid4()), "duration_ms": duration,
             "media": {key: media.get(key) for key in ("width", "height", "video_codec", "audio_codec")},
@@ -145,6 +154,11 @@ class DirectorStore:
             "eligible_cuts": eligible, "minimum_cut_ms": silence.detection.minimum_removable_ms,
             "brand": brand["settings"], "playbook": playbook.model_dump(),
             "brand_revision": brand["id"], "playbook_revision": f"{playbook.id}@{playbook.revision}",
+            "sound":{"guidance":PLAYBOOK_SOUND[playbook_id],"duration_ms":min(sound_duration,1200000),
+                     "assets":[{key:asset[key] for key in ("id","mood","kind","duration","genre")} for asset in sound_assets],
+                     "voice_metrics":{key:audio.get("original",{}).get(key) for key in ("input_i","input_tp")},
+                     "broll":[{"source":row["source"],"purpose":row["purpose"]} for row in
+                              json.loads(visual[0])["events"] if row["status"]=="accepted"] if visual else []},
             "visuals": {"guidance": GUIDANCE[playbook_id],
                         "speed": json.loads(public_render[0])["settings"]["playback_speed"] if public_render else 1,
                         "approved_motion": [{"source":e["source"],"end_zoom":e["end_zoom"]} for e in saved.get("events", [])

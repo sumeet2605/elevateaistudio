@@ -19,3 +19,5 @@ Day 8 adds the Camera & Motion workspace, local face-analysis caching, reviewed 
 Day 9 adds local Colour & Sound samples, adjustable finishing presets, pinned finishing revisions and encoded loudness verification. The four pilot treatments await visual and listening review.
 
 Day 10 adds transcript-linked visual recommendations, a reusable asset library, controlled provider adapters, deterministic graphic cards and reviewed full-screen cutaways. The mock-asset comparison awaits human review.
+
+Day 11 adds an audio asset library, speech-aware ducking, effects, reviewed mix revisions, loudness-matched samples and picture stream reuse. Production music selection and listening approval remain editorial decisions.

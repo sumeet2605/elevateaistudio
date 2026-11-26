@@ -50,7 +50,7 @@ def ffmpeg_args(executable, source: Path, manifest: RenderManifest, video_index:
              f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2:color={colour}")
     hdr = color_transfer in HDR_TRANSFERS
     tone = HDR_TO_SDR + "," if hdr else ""
-    managed = manifest.grade_revision or manifest.voice_revision or manifest.visual_revision
+    managed = manifest.grade_revision or manifest.voice_revision or manifest.visual_revision or (manifest.mix and manifest.mix.active)
     if not hdr and color_info and managed:
         matrix = {"bt470bg": "bt601", "smpte170m": "smpte170m", "bt2020nc": "bt2020", "bt709": "bt709"}
         options = f":in_color_matrix={matrix[color_info['color_space']]}" if color_info.get("color_space") in matrix else ""

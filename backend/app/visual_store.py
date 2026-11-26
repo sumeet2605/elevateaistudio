@@ -83,7 +83,7 @@ def suggestions(renders, project, plan):
              and round(w.start*1000) < min(plan["source_duration_ms"],round(w.end*1000))]
     result = []
     proposals = plan.get("visual_ideas") or []
-    if not proposals and not plan["prompt_version"].endswith("-visuals"):
+    if not proposals and not plan["prompt_version"].startswith(("director-v4", "director-v5")):
         for op in plan["operations"]:
             if op["kind"] != "b_roll" or op["status"] == "rejected":
                 continue

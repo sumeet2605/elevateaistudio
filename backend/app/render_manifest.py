@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 from .brand import Brand
+from .sound_mix import Mix,BoundCue
 from .visuals import BoundVisual
 from .finishing import Grade, Voice
 from .motion_models import CameraSettings, Focus, MotionEvent
@@ -98,6 +99,10 @@ class RenderManifest(BaseModel):
     visual_revision: UUID | None = None
     visual_fingerprint: str | None = None
     visuals: list[BoundVisual] = Field(default_factory=list, max_length=18)
+    mix: Mix | None = None
+    mix_revision: UUID | None = None
+    mix_fingerprint: str | None = None
+    sound_cues: list[BoundCue] = Field(default_factory=list, max_length=9)
     voice_leveling: bool
     notices: list[str]
 
@@ -148,6 +153,13 @@ class RenderManifest(BaseModel):
                 raise ValueError("Face-tracking timestamps must be ordered and within the original.")
             if self.display_geometry and min(self.display_geometry) < 2:
                 raise ValueError("Invalid display dimensions.")
+        if self.mix:
+            active = {cue.id:cue for cue in self.mix.cues()}
+            if len(active)!=len(self.sound_cues) or any(
+                item.cue != active.get(item.cue.id) or item.cue.asset_id != item.asset.id
+                or item.cue.end_ms > self.encoded_ms for item in self.sound_cues
+            ):
+                raise ValueError("The pinned mix cues do not match the edited timeline.")
         last = 0
         for visual in self.visuals:
             event, asset = visual.event, visual.asset
@@ -203,7 +215,8 @@ class RenderManifest(BaseModel):
             identity = hashlib.sha256(f"{identity}:{self.motion_revision}:{self.motion_fingerprint}".encode()).hexdigest()
         for revision, fingerprint in ((self.grade_revision, self.grade_fingerprint),
                                       (self.voice_revision, self.voice_fingerprint),
-                                      (self.visual_revision, self.visual_fingerprint)):
+                                      (self.visual_revision, self.visual_fingerprint),
+                                      (self.mix_revision, self.mix_fingerprint)):
             if revision:
                 identity = hashlib.sha256(f"{identity}:{revision}:{fingerprint}".encode()).hexdigest()
         return identity

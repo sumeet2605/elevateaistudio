@@ -9,6 +9,8 @@ from pydantic import ValidationError
 
 from .director import DirectorPlan
 from .asset_library import initialize_visuals
+from .sound_store import asset_row as sound_asset_row, initialize_sound, pinned_sound, sound_path
+from .sound_mix import Rights
 from .finish_store import initialize as initialize_finish, pinned as pinned_finish
 from .director_store import DirectorStore, reviewed_plan
 from .render_manifest import RenderManifest, RenderSettings, Zoom, frame_spans
@@ -33,6 +35,7 @@ class Renders:
         with self.projects.connect() as db:
             initialize_finish(db)
             initialize_visuals(db)
+            initialize_sound(db)
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS caption_revisions (
                     id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id),
@@ -91,7 +94,7 @@ class Renders:
             return "The original source no longer matches this plan."
         return None
 
-    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True, include_motion=True, include_visuals=True):
+    def make_manifest(self, project_id, plan_id, settings, *, include_captions=True, include_motion=True, include_visuals=True, include_sound=True):
         from .visual_store import latest as latest_visual, visual_manifest
         with self.projects.connect() as db:
             db.execute("BEGIN")
@@ -103,6 +106,14 @@ class Renders:
             caption = self.latest_caption(db, project_id, plan_id) if include_captions else None
             motion = MotionStore.latest(db, project_id, plan["id"]) if include_motion else None
             finishing = pinned_finish(db, project_id, plan["id"])
+            sound = pinned_sound(db,project_id,plan["id"]) if include_sound else {}
+            if sound:
+                mix = sound["mix"]
+                from .sound_mix import Mix
+                if Mix.model_validate(mix).active:
+                    raw_sound = db.execute("SELECT payload FROM sound_revisions WHERE id=?",(sound["mix_revision"],)).fetchone()[0]
+                    if json.loads(raw_sound)["speed"] != settings.playback_speed or json.loads(raw_sound)["voice_revision"] != finishing.get("voice_revision"):
+                        raise HTTPException(409,"Review and save the mix for this speed and voice revision.")
             row_visual = latest_visual(db, project_id, plan["id"]) if include_visuals else None
             visual = visual_manifest(row_visual)
             if row_visual and json.loads(row_visual["payload"])["speed"] != settings.playback_speed and visual["visuals"]:
@@ -160,7 +171,7 @@ class Renders:
                 brand_revision=plan["brand_revision"], playbook_revision=plan["playbook_revision"],
                 brand=plan["brand"], settings=settings, source_duration_ms=plan["source_duration_ms"],
                 cuts=reviewed["approved_cuts"], retained=retained, frame_ranges=frame_spans(retained),
-                emphasis=highlights, **camera, **finishing, **visual, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
+                emphasis=highlights, **camera, **finishing, **visual, **sound, voice_leveling=plan["brand"]["audio"] == "voice-leveling",
                 notices=notices,
             )
         except ValidationError as error:
@@ -189,7 +200,7 @@ class Renders:
             raise ValueError("The pinned caption revision changed or is missing.")
         return json.loads(row[0])
 
-    def stale(self, db, manifest, *, check_captions=True, check_motion=True, check_visuals=True):
+    def stale(self, db, manifest, *, check_captions=True, check_motion=True, check_visuals=True, check_sound=True):
         from .visual_store import latest as latest_visual, visual_manifest
         selected = self.selected(db, manifest.project_id, manifest.plan_id)
         if not selected or hashlib.sha256(selected[0].encode()).hexdigest() != manifest.plan_fingerprint:
@@ -214,6 +225,8 @@ class Renders:
                 getattr(manifest, f"{kind}_fingerprint") != finishing.get(f"{kind}_fingerprint")
             ):
                 return "Colour or sound changed. Generate and approve a new preview."
+        if check_sound and pinned_sound(db,manifest.project_id,manifest.plan_id).get("mix_fingerprint") != manifest.mix_fingerprint:
+            return "Sound mix changed. Generate and approve a new preview."
         if check_visuals:
             current = visual_manifest(latest_visual(db, manifest.project_id, manifest.plan_id))
             if current.get("visual_fingerprint") != manifest.visual_fingerprint:
@@ -290,7 +303,10 @@ class Renders:
             selected = None
             if row:
                 plan = row[1]
-                selected = {"id": plan["id"], "brand": plan["brand"], "brand_revision": plan["brand_revision"],
+                sound = pinned_sound(db,project_id,plan["id"])
+                mix_info = (json.loads(db.execute("SELECT payload FROM sound_revisions WHERE id=?",
+                                                 (sound["mix_revision"],)).fetchone()[0]) if sound else None)
+                selected = {"id": plan["id"], "mix_speed":mix_info["speed"] if mix_info else None, "brand": plan["brand"], "brand_revision": plan["brand_revision"],
                             "playbook_revision": plan["playbook_revision"],
                             "issue": self.revision_issue(db, project_id, plan)}
             revisions = db.execute("SELECT id FROM renders WHERE project_id=? ORDER BY rowid DESC",
@@ -316,6 +332,17 @@ class Renders:
         if require_approval and not item["bound_approval"]:
             raise HTTPException(409, "Approve this exact preview before downloading the final MP4.")
         manifest = item["manifest"]
+        if manifest.mix and any(not entry.asset.rights.permits(manifest.mix.platform,manifest.mix.commercial)
+                                for entry in manifest.sound_cues):
+            raise HTTPException(409,"Audio rights do not cover this export. Confirm platform and commercial rights for every audible asset.")
+        if manifest.mix and manifest.sound_cues:
+            with self.projects.connect() as db:
+                for entry in manifest.sound_cues:
+                    asset = entry.asset
+                    current = sound_asset_row(db,asset.id)
+                    if (not Rights.model_validate(current["rights"]).permits(manifest.mix.platform,manifest.mix.commercial)
+                            or digest(sound_path(self.projects,asset)) != asset.checksum):
+                        raise HTTPException(409,"The audio asset rights or checksum have changed.")
         media = self.projects.get(manifest.project_id)["media"]
         try:
             source = self.projects.source_path(manifest.project_id, media)

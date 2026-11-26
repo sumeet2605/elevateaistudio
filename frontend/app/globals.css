@@ -227,3 +227,10 @@ video { background: #08090a; display: block; width: 100%; height: auto; max-heig
 .visual-selected { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
 .visual-selected img { max-width: 100px; height: 100px; object-fit: contain; }
 .visual-render { max-width: min(100%,320px); width: 100%; background: #111013; border-radius: 8px; }
+
+.sound-timeline { display: grid; gap: 7px; margin: 15px 0; }
+.sound-timeline > div { display: grid; gap: 4px; grid-template-columns: 70px minmax(0, 1fr); align-items: center; }
+.sound-timeline .sound-bars { grid-column: 2; height: 34px; gap: 1px; }
+.sound-library audio { width: 100%; }
+.sound-studio .motion-event-details { margin: 10px 0; }
+.sound-studio summary { cursor: pointer; color: #e8d9ec; }

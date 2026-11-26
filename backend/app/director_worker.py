@@ -34,6 +34,7 @@ def direct(jobs, job, stage):
         "usage": cost,
         "finishing": response.finishing,
         "visual_ideas": response.visual_ideas,
+        "sound_ideas": response.sound_ideas,
     }
     stage("saving_director")
     jobs.complete(job_id, lambda db: store.write(db, plan))

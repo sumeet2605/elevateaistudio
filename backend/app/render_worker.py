@@ -13,6 +13,8 @@ from .finishing import loudness_pass, measure_audio
 from .render_manifest import FPS
 from .render_store import Renders, digest
 from .transcription import Transcript
+from .sound_store import carrier_for, master_blob, sound_path
+from .sound_mix import sound_meter
 
 FONTS = Path(__file__).parent / "render_fonts"
 
@@ -97,7 +99,11 @@ def render_video(settings, jobs, job, stage):
         executable = str(Path(executable).resolve())
         measured = None
         voice_seconds = None
-        if manifest.voice and manifest.voice.enabled:
+        active_mix = manifest.mix and manifest.mix.active
+        carrier = carrier_for(store,manifest) if active_mix else None
+        cached_picture = carrier is not None
+        mix_details = None
+        if not carrier and manifest.voice and manifest.voice.enabled:
             started_voice = perf_counter()
             stage("measuring_audio", .02)
             measured = loudness_pass(ffmpeg_args(executable, source, manifest, video["index"], audio["index"],
@@ -105,7 +111,28 @@ def render_video(settings, jobs, job, stage):
             voice_seconds = perf_counter() - started_voice
         args = ffmpeg_args(executable, source, manifest, video["index"], audio["index"],
                            color_transfer=video.get("color_transfer"), color_info=video, measured=measured, visual_paths=visual_paths)
-        run_ffmpeg(args, work, manifest.encoded_ms, lambda progress: stage("encoding_preview", progress))
+        if carrier is None:
+            run_ffmpeg(args, work, manifest.encoded_ms, lambda progress: stage("encoding_preview", progress))
+        if active_mix:
+            if carrier is None:
+                carrier=work/"voice-only.mp4"
+                (work/"preview.mp4").rename(carrier)
+            assets=[]
+            for item in manifest.sound_cues:
+                path=sound_path(store.projects,item.asset)
+                if digest(path)!=item.asset.checksum:
+                    raise ValueError("A pinned audio asset checksum changed.")
+                assets.append((item,path))
+            adjustment,mix_details=master_blob(executable,carrier,assets,manifest.mix,manifest.encoded_ms,work,
+                                               lambda:stage("mixing_sound",.7))
+            args=[executable,"-nostdin","-v","error","-progress","pipe:1","-i",str(carrier),"-i","mix.wav",
+                  "-map","0:v:0","-map","1:a:0","-c:v","copy","-af",f"volume={adjustment:.3f}dB",
+                  "-c:a","aac","-ar","48000","-b:a","192k" if manifest.settings.quality=="high" else "160k",
+                  "-movflags","+faststart","preview.mp4"]
+            run_ffmpeg(args,work,manifest.encoded_ms,lambda progress:stage("mixing_sound",.7+.25*progress))
+            (work/"mix.wav").unlink()
+            if not cached_picture:
+                carrier.unlink()
         stage("verifying_preview", 0.99)
         preview = work / "preview.mp4"
         verified_video, verified_audio, container = streams(settings.ffprobe, preview)
@@ -116,18 +143,22 @@ def render_video(settings, jobs, job, stage):
                 verified_video["height"], verified_video["pix_fmt"]) != ("h264", "aac", 1080, 1920, "yuv420p"):
             raise ValueError("FFprobe found unexpected output codecs, dimensions, or pixel format.")
         hdr = video.get("color_transfer") in HDR_TRANSFERS
-        if (hdr or manifest.grade_revision or manifest.voice_revision or manifest.visual_revision) and any(verified_video.get(field) != "bt709"
+        if (hdr or manifest.grade_revision or manifest.voice_revision or manifest.visual_revision or active_mix) and any(verified_video.get(field) != "bt709"
                        for field in ("color_transfer", "color_space", "color_primaries")):
             raise ValueError("FFprobe could not confirm the finished video is tagged BT.709 SDR.")
         if Fraction(verified_video["avg_frame_rate"]) != FPS:
             raise ValueError("FFprobe found an unexpected output frame rate.")
         if max(abs(actual - manifest.encoded_ms / 1000), abs(video_length - audio_length)) > 0.07:
             raise ValueError("The encoded duration or stream alignment exceeded the expected frame tolerance.")
-        output_audio = measure_audio(executable, preview, lambda: stage("verifying_preview", .99)) if manifest.voice_revision else None
-        if (manifest.voice and manifest.voice.enabled and output_audio and output_audio.get("input_tp") is not None
+        output_audio = (sound_meter(executable,preview,lambda:stage("verifying_preview",.99)) if active_mix else
+                        measure_audio(executable,preview,lambda:stage("verifying_preview",.99)) if manifest.voice_revision else None)
+        if active_mix and output_audio and output_audio.get("input_tp") is not None and output_audio["input_tp"]> -1.45:
+            raise ValueError("The encoded mix exceeds the -1.5 dBTP ceiling. Lower the music or effects.")
+        if (not active_mix and manifest.voice and manifest.voice.enabled and output_audio and output_audio.get("input_tp") is not None
                 and output_audio["input_tp"] > manifest.voice.peak + .05):
             raise ValueError("Encoded audio exceeded the requested true-peak ceiling. Lower the target loudness and render again.")
         metadata = {
+            "sound_mix":mix_details,"video_stream_reused":cached_picture,
             "output_audio": output_audio, "audio_analysis_seconds": voice_seconds,
             "created_at": datetime.now(timezone.utc).isoformat(), "sha256": digest(preview),
             "width": 1080, "height": 1920, "video_codec": "h264", "audio_codec": "aac",
