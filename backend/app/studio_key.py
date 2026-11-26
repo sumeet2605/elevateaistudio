@@ -8,6 +8,7 @@ from .visuals import VisualAsset
 PRESETS = {
     "original@1": ("Original Background", "#191B1E", "#191B1E"),
     "mystical-cinematic@1": ("Mystical Cinematic", "#181618", "#503120"),
+    "mystical-cinematic@2": ("Mystical Cinematic V2", "#181618", "#503120"),
     "healing-sanctuary@1": ("Healing Sanctuary", "#A89179", "#715A49"),
     "executive-authority@1": ("Executive Authority", "#4A4541", "#757375"),
     "mystical-digital@1": ("Mystical Digital", "#151625", "#524025"),
@@ -15,12 +16,23 @@ PRESETS = {
     "nature-retreat@1": ("Nature Retreat", "#2E4235", "#746C4F"),
 }
 
+StudioPreset = Literal["original@1", "mystical-cinematic@1", "mystical-cinematic@2", "healing-sanctuary@1",
+                       "executive-authority@1", "mystical-digital@1", "minimal-creator@1", "nature-retreat@1"]
+
+PRESET_ADJUSTMENTS = {
+    "mystical-cinematic@2": {
+        "similarity": .10, "blend": .036, "spill": .95, "refine": "none", "feather": .32,
+        "foreground_scale": 1.05, "foreground_y": .9, "foreground_exposure": .045,
+        "foreground_midtone": .022, "foreground_temperature": .012, "foreground_tint": .003,
+        "background_brightness": .018, "background_blur": 1.5,
+    },
+}
+
 
 class StudioSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     enabled: bool = False
-    preset: Literal["original@1","mystical-cinematic@1","healing-sanctuary@1","executive-authority@1",
-                    "mystical-digital@1","minimal-creator@1","nature-retreat@1"] = "mystical-cinematic@1"
+    preset: StudioPreset = "mystical-cinematic@1"
     mode: Literal["solid","gradient","asset"] = "gradient"
     background_id: UUID | None = None
     key: str = Field(default="#00B140",pattern=r"^#[0-9a-fA-F]{6}$")
@@ -30,11 +42,13 @@ class StudioSettings(BaseModel):
     refine: Literal["none","erode","expand"] = "none"
     feather: float = Field(default=.65,ge=0,le=3)
     opacity: float = Field(default=1,ge=.35,le=1)
-    foreground_scale: float = Field(default=1,ge=.55,le=1)
+    foreground_scale: float = Field(default=1,ge=.55,le=1.10)
     foreground_x: float = Field(default=.5,ge=0,le=1)
     foreground_y: float = Field(default=.5,ge=0,le=1)
     foreground_fit: Literal["contain","cover"] = "contain"
     foreground_exposure: float = Field(default=0,ge=-.15,le=.15)
+    foreground_midtone: float = Field(default=0,ge=-.10,le=.10)
+    foreground_sharpen: float = Field(default=0,ge=0,le=.20)
     foreground_temperature: float = Field(default=0,ge=-.045,le=.045)
     foreground_tint: float = Field(default=0,ge=-.045,le=.045)
     foreground_contrast: float = Field(default=1,ge=.8,le=1.2)
@@ -75,32 +89,49 @@ def key_graph(nodes,input_label,settings,tag="studio",grade=""):
         mask+=","+("erosion" if settings.refine=="erode" else "dilation")
     if settings.feather:
         mask+=f",gblur=sigma={settings.feather:.4f}"
-    # Work on the alpha plane alone. Green spill suppression never alters this matte.
-    mask+=f",lut=y='val*{settings.opacity:.4f}'"
+    # Remove the faint alpha haze without contracting the silhouette by whole pixels.
+    v2 = settings.preset == "mystical-cinematic@2"
+    alpha = "clip((val-10)*255/245,0,255)" if v2 else "val"
+    mask+=f",lut=y='{alpha}*{settings.opacity:.4f}'"
     nodes.append(mask+matte)
     color=f"{rgb}format=gbrp"
-    if settings.spill:
+    if settings.spill and v2:
+        color+=f",despill=type=green:mix=0.5:expand=0:green=-{settings.spill:.4f}:alpha=0"
+    elif settings.spill:
         color+=f",despill=type=green:mix={settings.spill:.4f}:expand=0.05"
-    if settings.foreground_temperature or settings.foreground_tint:
-        temp,tint=settings.foreground_temperature,settings.foreground_tint
+    temp,tint=settings.foreground_temperature,settings.foreground_tint
+    exposure,midtone=settings.foreground_exposure,settings.foreground_midtone
+    if v2 and any((exposure,midtone,temp,tint)):
+        # One bounded curve per channel. Anchor at black and taper toward white.
+        gain = 2**(3*exposure)-1
+        offsets = (temp*4, -tint*4, -temp*4)
+        channels = ":".join(
+            f"{channel}='val+val*(1-val/maxval)*({gain+offset:.5f}+{4*midtone:.5f}*val/maxval)'"
+            for channel,offset in zip("rgb",offsets)
+        )
+        color+=",lutrgb="+channels
+    elif temp or tint:
         color+=f",colorbalance=rm={temp:.4f}:bm={-temp:.4f}:gm={-tint:.4f}:pl=1"
-    if settings.foreground_exposure or settings.foreground_contrast!=1:
-        color+=f",eq=brightness={settings.foreground_exposure:.4f}:contrast={settings.foreground_contrast:.4f}"
+    if settings.foreground_contrast!=1 or (not v2 and (exposure or midtone)):
+        color+=(f",eq=brightness={0 if v2 else exposure:.4f}:contrast={settings.foreground_contrast:.4f}"
+                f":gamma={1 if v2 else 1+midtone:.4f}")
+    if settings.foreground_sharpen:
+        color+=f",unsharp=lx=3:ly=3:la={settings.foreground_sharpen:.4f}:ca=0"
     nodes.append(color+","+grade+f"format=yuv444p{filtered}")
     nodes.append(f"{filtered}{matte}alphamerge{foreground}")
     return foreground
 
 
-def static_background(nodes,settings,width,height,fps,frames,label):
+def static_background(nodes,settings,width,height,fps,label):
     shade=settings.background_color[1:]
     if settings.mode=="gradient":
         a=[int(settings.background_color[i:i+2],16) for i in (1,3,5)]
         b=[int(settings.background_end_color[i:i+2],16) for i in (1,3,5)]
         gradients=":".join(f"{channel}='{first}+({last-first})*Y/H'" for channel,first,last in zip("rgb",a,b))
         nodes.append(f"color=c=0x{shade}:s={width}x{height}:r={fps},trim=end_frame=1,format=gbrp,geq={gradients},"
-                     f"format=yuv420p,tpad=stop_mode=clone:stop={frames},trim=end_frame={frames}{label}")
+                     f"format=yuv420p{label}")
     else:
-        nodes.append(f"color=c=0x{shade}:s={width}x{height}:r={fps},trim=end_frame={frames}{label}")
+        nodes.append(f"color=c=0x{shade}:s={width}x{height}:r={fps},trim=end_frame=1{label}")
 
 
 def studio_graph(nodes,raw,settings,asset,index,frames,*,width=1080,height=1920,fps=30,tone="",grade="",diagnostic="composite"):
@@ -117,8 +148,9 @@ def studio_graph(nodes,raw,settings,asset,index,frames,*,width=1080,height=1920,
     if ratio=="increase":
         filters+=f",crop={sw}:{sh}"
     nodes.append(f"{fg}{filters},format=yuva444p[studioplaced]")
+    still = diagnostic in {"black","white"} or not asset or asset.kind=="image"
     if diagnostic in {"black","white"}:
-        nodes.append(f"color=c={diagnostic}:s={width}x{height}:r={fps},trim=end_frame={frames}[studiofloor]")
+        nodes.append(f"color=c={diagnostic}:s={width}x{height}:r={fps},trim=end_frame=1[studiofloor]")
     elif asset:
         bw=int(width*settings.background_scale)//2*2
         bh=int(height*settings.background_scale)//2*2
@@ -126,14 +158,13 @@ def studio_graph(nodes,raw,settings,asset,index,frames,*,width=1080,height=1920,
         frame=(f"crop={width}:{height}:(iw-ow)*{settings.background_x:.4f}:(ih-oh)*{settings.background_y:.4f}" if fit=="increase" else
                f"crop=w='min(iw,{width})':h='min(ih,{height})':x='(iw-ow)*{settings.background_x:.4f}':y='(ih-oh)*{settings.background_y:.4f}',"
                f"pad={width}:{height}:(ow-iw)*{settings.background_x:.4f}:(oh-ih)*{settings.background_y:.4f}:color=0x{settings.background_color[1:]}")
-        hold=f",tpad=stop_mode=clone:stop={frames}" if asset.kind=="image" else ""
         start=0 if asset.kind=="image" else settings.offset_ms/1000
         nodes.append(f"[{index}:v:0]trim=start={start:.3f},setpts=PTS-STARTPTS,fps={fps},"
                      f"scale='max(2,trunc(iw*sar/2)*2)':ih,setsar=1,"
                      f"scale={bw}:{bh}:force_original_aspect_ratio={fit}:force_divisible_by=2"
-                     f"{','+tone if asset.hdr and tone else ''},{frame}{hold},trim=end_frame={frames}[studiofloor]")
+                     f"{','+tone if asset.hdr and tone else ''},{frame},trim=end_frame={1 if still else frames}[studiofloor]")
     else:
-        static_background(nodes,settings,width,height,fps,frames,"[studiofloor]")
+        static_background(nodes,settings,width,height,fps,"[studiofloor]")
     bg=(f"[studiofloor]eq=brightness={settings.background_brightness:.4f}:contrast={settings.background_contrast:.4f}"
         f":saturation={settings.background_saturation:.4f}")
     if settings.background_blur:
@@ -141,7 +172,9 @@ def studio_graph(nodes,raw,settings,asset,index,frames,*,width=1080,height=1920,
     if settings.background_temperature:
         temp=settings.background_temperature
         bg+=f",colorbalance=rm={temp:.4f}:bm={-temp:.4f}:pl=1"
-    nodes.append(bg+",format=yuv420p[studiobg]")
+    # Prepare a still plate once, then extend its frames for the composite.
+    hold = f",tpad=stop_mode=clone:stop={frames-1}" if still and frames>1 else ""
+    nodes.append(bg+",format=yuv420p"+hold+"[studiobg]")
     nodes.append(f"[studiobg][studioplaced]overlay=x='(main_w-overlay_w)*{settings.foreground_x:.4f}':"
                  f"y='(main_h-overlay_h)*{settings.foreground_y:.4f}':alpha=straight:shortest=1,setsar=1[studiomixed]")
     return "[studiomixed]"
@@ -183,8 +216,7 @@ def sample_key(frames):
 class StudioIdea(BaseModel):
     model_config=ConfigDict(extra="forbid",strict=True)
     enabled: bool
-    preset: Literal["original@1","mystical-cinematic@1","healing-sanctuary@1","executive-authority@1",
-                    "mystical-digital@1","minimal-creator@1","nature-retreat@1"]
+    preset: StudioPreset
     asset_id: str | None
     placement: Literal["center","left","right"]
     blur: float

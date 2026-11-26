@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from app.main import create_app
 from app.render_store import Renders
-from app.studio_key import StudioSettings, sample_key
+from app.studio_key import PRESET_ADJUSTMENTS, StudioSettings, sample_key
 from test_render import FFMPEG, FFPROBE, prepared
 from test_transcription import studio
 
@@ -77,6 +77,28 @@ def test_ffmpeg_key_matte_foreground_and_background_loop(studio,tmp_path):
         sample=check(client,root+"/studio/preview",200,"POST",json={"settings":composite,"duration":2}).json()
         assert sample["duration"]==2
     check(client,"/assets",422,"POST",files={"file":("fake.png",b"invalid image")})
+    preset = "mystical-cinematic@2"
+    assert check(client,root+"/studio").json()["preset_adjustments"][preset]["foreground_scale"] == 1.05
+    v2 = {**opts, **PRESET_ADJUSTMENTS[preset], "preset":preset,"foreground_sharpen":.12}
+    assert check(client,root+"/studio/preview",200,"POST",json={"settings":v2,"duration":2}).json()["duration"] == 2
+    sample = check(client,root+"/studio/preview",200,"POST",
+                   json={"settings":v2,"mode":"matte","start_ms":1400,"duration":2}).json()
+    mask = tmp_path/"v2-mask.mp4"
+    mask.write_bytes(check(client,f"{root}/studio/preview/{sample['id']}.mp4").content)
+    raw = subprocess.check_output([FFMPEG,"-v","error","-i",str(mask),"-vf","format=gray",
+                                   "-frames:v","1","-f","rawvideo","-"])
+    matte = np.frombuffer(raw,dtype=np.uint8).reshape(640,360)
+    assert matte[320,82] > 230  # moving hand
+    assert matte[246,150] > 230  # subject core
+    assert matte[100,65] < 12   # backdrop
+
+
+@pytest.mark.parametrize("options",[
+    {"foreground_midtone":.2},{"foreground_sharpen":.21},{"foreground_scale":1.11},
+])
+def test_v2_foreground_controls_are_bounded(options):
+    with pytest.raises(ValidationError):
+        StudioSettings(preset="mystical-cinematic@2",**options)
 
 
 def test_studio_revision_invalidates_only_current_approval(studio,monkeypatch):

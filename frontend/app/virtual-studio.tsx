@@ -9,6 +9,7 @@ type Draft = {
   similarity:number; blend:number; spill:number; refine:"none"|"erode"|"expand"; feather:number; opacity:number;
   foreground_scale:number; foreground_x:number; foreground_y:number; foreground_fit:"contain"|"cover";
   foreground_exposure:number; foreground_temperature:number; foreground_tint:number; foreground_contrast:number;
+  foreground_midtone:number; foreground_sharpen:number;
   background_fit:"contain"|"cover";background_scale:number;background_x:number;background_y:number;background_blur:number;
   background_brightness:number;background_contrast:number;background_saturation:number;background_temperature:number;
   background_color:string;background_end_color:string;offset_ms:number;loop:boolean;camera:"static"|"coordinated";
@@ -17,6 +18,7 @@ const defaults:Draft={enabled:false,preset:"mystical-cinematic@1",mode:"gradient
   similarity:.18,blend:.08,spill:.38,refine:"none",feather:.65,opacity:1,
   foreground_scale:1,foreground_x:.5,foreground_y:.5,foreground_fit:"contain",
   foreground_exposure:0,foreground_temperature:0,foreground_tint:0,foreground_contrast:1,
+  foreground_midtone:0,foreground_sharpen:0,
   background_fit:"cover",background_scale:1,background_x:.5,background_y:.5,background_blur:2,
   background_brightness:0,background_contrast:1,background_saturation:1,background_temperature:0,
   background_color:"#181618",background_end_color:"#503120",offset_ms:0,loop:false,camera:"coordinated"};
@@ -25,7 +27,8 @@ type Asset={id:string;name:string;description:string;category:string;kind:string
 type Library={items:Asset[]};
 type Revision={id:string;settings:Draft;speed:1|1.1;created_at:string};
 type Suggestion={enabled:boolean;preset:string;asset_id:string|null;placement:"center"|"left"|"right";blur:number;camera:"static"|"coordinated";rationale:string};
-type State={plan_id:string|null;presets:Record<string,[string,string,string]>;current:Revision|null;history:Revision[];suggestion?:Suggestion|null};
+type State={plan_id:string|null;presets:Record<string,[string,string,string]>;preset_adjustments:Record<string,Partial<Draft>>;
+  current:Revision|null;history:Revision[];suggestion?:Suggestion|null};
 type Analysis={key?:string;detected:boolean;confidence:number;similarity?:number;blend?:number;analysis_seconds:number;warnings:string[]};
 type Sample={id:string;extension:"mp4"|"webm";seconds:number;cached:boolean};
 type Mode="original"|"matte"|"foreground"|"black"|"white"|"composite";
@@ -33,8 +36,9 @@ const post=(data:unknown):RequestInit=>({method:"POST",headers:{"Content-Type":"
 const controls = {
   key:[["similarity","Tolerance",.01,.45,.005],["blend","Edge blend",0,.35,.005],["spill","Spill suppression",0,1,.01],
     ["feather","Feather (pixels)",0,3,.1],["opacity","Foreground opacity",.35,1,.01]],
-  foreground:[["foreground_scale","Scale",.55,1,.01],["foreground_x","Horizontal",0,1,.01],["foreground_y","Vertical",0,1,.01],
-    ["foreground_exposure","Brightness offset",-.15,.15,.005],["foreground_temperature","Temperature",-.045,.045,.005],
+  foreground:[["foreground_scale","Scale (1 = 100%)",.55,1.10,.01],["foreground_x","Horizontal",0,1,.01],["foreground_y","Vertical",0,1,.01],
+    ["foreground_exposure","Exposure offset",-.15,.15,.005],["foreground_midtone","Midtone lift",-.10,.10,.005],
+    ["foreground_sharpen","Detail sharpening",0,.20,.02],["foreground_temperature","Temperature",-.045,.045,.005],
     ["foreground_tint","Tint",-.045,.045,.005],["foreground_contrast","Contrast",.8,1.2,.01]],
   background:[["background_scale","Scale",1,1.4,.01],["background_x","Horizontal",0,1,.01],["background_y","Vertical",0,1,.01],
     ["background_blur","Blur (pixels)",0,18,.5],["background_brightness","Brightness",-.2,.2,.01],
@@ -68,7 +72,7 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
     Promise.all([request<State>(root),request<Library>("/assets")]).then(([next,library])=>{
       if(cancelled)return;
       setState(next);setAssets(library.items.filter(asset=>asset.category==="Virtual Studio"));
-      setDraft(next.current?.settings??defaults);setSpeed(next.current?.speed??1);
+      setDraft({...defaults,...next.current?.settings});setSpeed(next.current?.speed??1);
     }).catch(e=>{if(!cancelled)setError(e.message);});
     return()=>{cancelled=true;};
   },[root]);
@@ -81,7 +85,12 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
     const colors=state?.presets[preset];
     const name=preset.split("@")[0].replaceAll("-"," ");
     const asset=assets.find(item=>item.name.toLowerCase().replaceAll("-"," ").includes(name));
-    update({preset,enabled:preset!=="original@1",mode:asset?"asset":"gradient",background_id:asset?.id??null,
+    const prior=Object.keys(state?.preset_adjustments?.[draft.preset]??{}) as (keyof Draft)[];
+    const reset=Object.fromEntries(prior.map(key=>[key,defaults[key]]));
+    const sameStudio=draft.preset.split("@")[0]===preset.split("@")[0]&&draft.mode==="asset";
+    const background= sameStudio ? draft.background_id : asset?.id;
+    update({...reset,...state?.preset_adjustments?.[preset],preset,enabled:preset!=="original@1",mode:background?"asset":"gradient",
+      background_id:background??null,
       background_color:colors?.[1]??defaults.background_color,background_end_color:colors?.[2]??defaults.background_end_color});
   }
   function url(sample:Sample){return `${api}${root}/preview/${sample.id}.${sample.extension}`;}
@@ -149,7 +158,7 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
       {state?.suggestion&&<p className="muted small">{state.suggestion.rationale} <button className="secondary" onClick={()=>{
         const idea=state.suggestion!;
         const colors=state.presets[idea.preset];
-        update({enabled:idea.enabled,preset:idea.enabled?idea.preset:"original@1",background_id:idea.asset_id,mode:idea.asset_id?"asset":"gradient",
+        update({...state.preset_adjustments?.[idea.preset],enabled:idea.enabled,preset:idea.enabled?idea.preset:"original@1",background_id:idea.asset_id,mode:idea.asset_id?"asset":"gradient",
           background_color:colors?.[1]??defaults.background_color,background_end_color:colors?.[2]??defaults.background_end_color,
           foreground_x:idea.placement==="left"?0:idea.placement==="right"?1:.5,
           foreground_scale:idea.placement==="center"?1:.82,background_blur:idea.blur,camera:idea.camera});
@@ -157,7 +166,10 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
       <div className="motion-actions visual-controls">
         <button className="secondary" disabled={!duration||busy} onClick={()=>void perform(async()=>{const report=await request<Analysis>(root+"/analyse",post({}));
           setAnalysis(report);setNotice(report.detected?"Background sampled. Review the key before enabling it.":"Choose a key colour manually.");})}>Analyse background</button>
-        {analysis?.key&&<button className="secondary" onClick={()=>update({key:analysis.key,similarity:analysis.similarity,blend:analysis.blend})}>Use analysed key</button>}
+        {analysis?.key&&<button className="secondary" onClick={()=>update({
+          key:analysis.key,similarity:analysis.similarity,
+          blend:draft.preset==="mystical-cinematic@2"?draft.blend:analysis.blend,
+        })}>Use analysed key</button>}
         <button className="secondary" onClick={()=>{setDraft(defaults);setResult(null);}}>Reset controls</button>
       </div>
       {analysis&&<><p className="muted small">Border sampling indicator {(100*analysis.confidence).toFixed(0)}% · {analysis.analysis_seconds.toFixed(2)} s</p>
@@ -201,7 +213,7 @@ export default function VirtualStudio({projectId,duration,position}:{projectId:s
         <label>Revision history<select value={revision} onChange={e=>setRevision(e.target.value)}><option value="">Choose revision</option>
           {state.history.map(item=><option key={item.id} value={item.id}>{new Date(item.created_at).toLocaleString()}</option>)}</select></label>
         <button className="secondary" disabled={!revision} onClick={()=>{const selected=state.history.find(item=>item.id===revision);
-          if(selected){setDraft(selected.settings);setSpeed(selected.speed);setResult(null);}}}>Restore draft</button>
+          if(selected){setDraft({...defaults,...selected.settings});setSpeed(selected.speed);setResult(null);}}}>Restore draft</button>
         <button className="primary" disabled={busy} onClick={()=>void perform(async()=>{
           const saved=await request<Revision>(root,post({plan_id:state.plan_id,speed,settings:draft}));
           setState({...state,current:saved,history:[saved,...state.history]});setNotice("Studio revision saved. Render and review a new MP4.");

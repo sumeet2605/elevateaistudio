@@ -23,3 +23,5 @@ Day 10 adds transcript-linked visual recommendations, a reusable asset library, 
 Day 11 adds an audio asset library, speech-aware ducking, effects, reviewed mix revisions, loudness-matched samples and picture stream reuse. Production music selection and listening approval remain editorial decisions.
 
 Day 11.1 adds green-screen sampling, matte diagnostics, six Virtual Studio presets, immutable studio revisions and deterministic background composition.
+
+The Day 11.1 quality pass adds Mystical Cinematic V2, reviewable 100–110% foreground framing and one-pass still-plate preparation.
